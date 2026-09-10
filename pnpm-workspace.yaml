@@ -1,0 +1,11 @@
+# The pnpm-workspace.yaml file is the map of your monorepo. 
+# Without it, pnpm treats every folder as a totally isolated project.
+#  With it, pnpm understands that all these folders belong to one big family.
+
+# This is useful in giving type suggestions in other folder where this packages can be used.
+
+
+packages:
+  - apps/*
+  - packages/*
+  - services/*

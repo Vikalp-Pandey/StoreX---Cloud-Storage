@@ -1,0 +1,39 @@
+{
+  "name": "@apps/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "tsx watch --env-file=../../.env.local src/index.ts",
+    "build": "tsc",
+    "dev": "tsx watch --env-file=../../.env.local src/index.ts",
+    "lint": "eslint .",
+    "test": "tsx --import ./tests/setup.mjs --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1123.0",
+    "@aws-sdk/s3-request-presigner": "^3.1123.0",
+    "@hono/node-server": "^1.13.0",
+    "@packages/env": "workspace:*",
+    "@services/emailservices": "workspace:*",
+    "axios": "^1.13.6",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^16.0.3",
+    "hono": "^4.7.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.2.4",
+    "nodemailer": "^8.0.1",
+    "react": "^19.2.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@packages/httputils": "workspace:*",
+    "@react-email/components": "^1.0.8",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.3.5",
+    "@types/nodemailer": "^7.0.11",
+    "@types/react": "^19.2.14",
+    "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
