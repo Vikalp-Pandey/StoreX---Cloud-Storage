@@ -1,0 +1,18 @@
+{
+  "files": [],
+  
+  "compilerOptions": {
+    // "baseUrl": ".",
+    "forceConsistentCasingInFileNames":true,
+    "strict": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" },
+  ]
+}

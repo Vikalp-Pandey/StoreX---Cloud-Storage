@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+:root {
+  /* Match your Sky-600 and Sky-500 colors */
+  --toastify-color-info: #0ea5e9;
+  --toastify-color-success: #0284c7;
+  --toastify-color-error: #f43f5e; /* Match your rose-500 */
+  
+  /* Match your UI Backgrounds */
+  --toastify-color-dark: #080808; 
+  --toastify-text-color-dark: #e2e8f0; /* slate-200 */
+}
+
+.Toastify__toast {
+  border: 1px solid rgba(255, 255, 255, 0.05); /* Match your border-white/5 */
+  border-radius: 8px;
+  font-family: inherit; /* Use your UI font */
+}
+
+.Toastify__toast--dark {
+  background-color: #080808;
+}

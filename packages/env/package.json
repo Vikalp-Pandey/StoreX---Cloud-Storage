@@ -1,0 +1,25 @@
+{
+  "name": "@packages/env",
+  "version": "1.0.0",
+  "description": "",
+  "main": "env.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "exports": {
+    ".": "./env.ts",
+    "./client": "./client.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.30.3",
+  "dependencies": {
+    "@t3-oss/env-core": "^0.13.11",
+    "dotenv": "^16.6.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@t3-oss/env-core": "^0.13.11"
+  }
+}

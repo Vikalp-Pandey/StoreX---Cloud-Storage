@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react",
+    "module": "commonjs",
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@services/emailservices": ["./src/templates/email.service"]
+    }
+  },
+  "include": ["src", "../../services/emailServices"],
+  "exclude": ["node_modules", "dist"]
+}

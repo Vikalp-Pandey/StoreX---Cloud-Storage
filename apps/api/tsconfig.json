@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "rootDir": "../../",
+    "skipLibCheck": true
+  },
+  "include": ["src", "../../packages/env/env.ts"],
+  "exclude": ["node_modules", "dist"]
+}

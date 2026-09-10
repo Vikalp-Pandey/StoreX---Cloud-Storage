@@ -1,0 +1,30 @@
+{
+  "name": "storeit",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Storex Monorepo",
+  "type": "module",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "check-types": "turbo check-types",
+    "add:api": "pnpm --filter api add",
+    "add:utils": "pnpm --filter httputils add",
+    "add:env": "pnpm --filter env add",
+    "add:ui": "pnpm --filter ui add",
+    "add:email": "pnpm --filter emailservices add",
+    "add:fileupload": "pnpm --filter fileupload add"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.30.3",
+  "devDependencies": {
+    "prettier": "^3.8.1",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "turbo": "^2.8.14"
+  }
+}
