@@ -46,9 +46,9 @@ export default function DashboardPage() {
 
   if (isLoading || !user) {
     return (
-      <div className="flex min-h-screen w-full flex-col items-center justify-center bg-[#212121] text-[#b4b4b4]">
+      <div className="flex min-h-screen w-full flex-col items-center justify-center bg-black text-zinc-400">
         <Loader2
-          className="size-8 animate-spin text-[#ececec]"
+          className="size-8 animate-spin text-zinc-100"
           aria-hidden="true"
         />
         <p className="mt-4 text-sm">Checking your StoreX session...</p>
@@ -57,7 +57,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#212121] text-[#ececec]">
+    <div className="min-h-screen bg-black text-zinc-100">
       <DashboardSidebar
         open={mobileNavigationOpen}
         onClose={closeMobileNavigation}
@@ -74,7 +74,7 @@ export default function DashboardPage() {
         }`}
       >
         <DashboardTopBar onOpenMenu={() => setMobileNavigationOpen(true)} />
-        <main className="min-h-[calc(100vh-4rem)] bg-[#212121] px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+        <main className="min-h-[calc(100vh-4rem)] bg-black px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
           <div className="mx-auto max-w-[1600px]">
             <DashboardSection section={section} />
           </div>

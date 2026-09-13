@@ -7,8 +7,10 @@ export interface StoredFile {
   user?: string;
   name: string;
   size: string;
-  parent?: string;
+  parent?: string | null;
   permissions?: Permission[];
+  sharedBy?: SharedBy | null;
+  isShared?: boolean;
   key: string;
   url: string;
 }
@@ -20,10 +22,38 @@ export interface StoredFolder {
   user?: string;
   name: string;
   size: string;
-  parent?: string;
+  parent?: string | null;
+  sharedBy?: SharedBy | null;
+  isShared?: boolean;
 }
 
 export type StoredItems = [StoredFile[], StoredFolder[]];
+
+export interface PaginatedItems {
+  files: StoredFile[];
+  folders: StoredFolder[];
+  page: number;
+}
+
+export interface TrashItem {
+  _id: string;
+  trashType: 'owned-item' | 'shared-access';
+  itemType: 'file' | 'folder';
+  name: string;
+  deletedAt: string;
+}
+
+export interface RecentItem {
+  _id: string;
+  itemType: 'file' | 'folder';
+  openedAt: string;
+  item: StoredFile | StoredFolder;
+}
+
+export interface SearchItem {
+  itemType: 'file' | 'folder';
+  item: StoredFile | StoredFolder;
+}
 
 interface ApiResponse<T> {
   success: boolean;
@@ -37,7 +67,6 @@ export interface CreateFileInput {
   size: number;
   mimeType: string;
   key: string;
-  fileUrl: string;
   parentFolder?: string;
 }
 
@@ -60,14 +89,19 @@ export const filesApi = {
   },
 
   getItems: async (parent?: string) => {
-    const response = await api.get<ApiResponse<StoredItems>>(
-      '/files/getItems',
-      {
-        params: { parent },
-      },
+    const response = await api.post<ApiResponse<PaginatedItems>>(
+      '/files/get-items',
+      { parentFolder: parent },
     );
     return response.data.data;
   },
+
+  searchItems: async (q: string) =>
+    (
+      await api.get<ApiResponse<SearchItem[]>>('/files/search', {
+        params: { q },
+      })
+    ).data.data,
 
   createFile: async (input: CreateFileInput) => {
     const response = await api.post<ApiResponse<StoredFile>>(
@@ -92,25 +126,46 @@ export const filesApi = {
   renameFolder: async (input: RenameFolderInput) => {
     const response = await api.put<ApiResponse<StoredFolder>>(
       '/files/renameFolder',
-      undefined,
-      { params: input },
+      { folderId: input._id, name: input.name },
     );
     return response.data.data;
   },
 
   deleteFile: async (_id: string) => {
     const response = await api.delete('/files/deleteFile', {
-      params: { fileId: _id },
+      data: { fileId: _id },
     });
     return response.data;
   },
 
   deleteFolder: async (_id: string) => {
     const response = await api.delete('/files/deleteFolder', {
-      params: { folderId: _id },
+      data: { folderId: _id },
     });
     return response.data;
   },
+
+  getTrash: async () =>
+    (await api.get<ApiResponse<TrashItem[]>>('/files/trash')).data.data,
+
+  restoreTrashItem: async (trashId: string) =>
+    (await api.post('/files/trash/restore', { trashId })).data,
+
+  getRecent: async () =>
+    (await api.get<ApiResponse<RecentItem[]>>('/files/recent')).data.data,
+
+  recordRecent: async ({
+    itemId,
+    itemType,
+  }: {
+    itemId: string;
+    itemType: 'file' | 'folder';
+  }) =>
+    (
+      await api.post('/files/recent/open', {
+        [itemType === 'file' ? 'fileId' : 'folderId']: itemId,
+      })
+    ).data,
 
   upload: async ({
     file,
@@ -128,7 +183,7 @@ export const filesApi = {
       fileType: file.type,
       parentFolder: parent,
     });
-    const { fileUrl, uploadUrl, key } = response.data.data;
+    const { uploadUrl, key } = response.data.data;
     await axios.put(uploadUrl, file, {
       headers: { 'Content-Type': file.type },
       onUploadProgress: (event) =>
@@ -139,9 +194,17 @@ export const filesApi = {
       size: file.size,
       mimeType: file.type,
       key,
-      fileUrl,
       parentFolder: parent,
     });
+  },
+  openFile: (url: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   },
   download: async (url: string, fileName: string) => {
     const response = await fetch(url);
@@ -161,13 +224,44 @@ export const filesApi = {
         ApiResponse<{ _id: string; name: string; email: string }[]>
       >('/files/search-users', { params: { q } })
     ).data.data,
-  sharedWithMe: async () =>
-    (await api.get<ApiResponse<SharedEntry[]>>('/files/shared-with-me')).data
-      .data,
+  sharedWithMe: async () => {
+    const { shares, folders, files } = (
+      await api.get<ApiResponse<SharedWithMeResponse>>('/files/shared-with-me')
+    ).data.data;
+    return shares.flatMap((share): SharedEntry[] => {
+      if (share.objectType === 'folder') {
+        const folder = folders.find((item) => item._id === share.objectId) as
+          | SharedFolder
+          | undefined;
+        return folder
+          ? [
+              {
+                item: folder,
+                itemType: 'folder',
+                permissions: share.permissions,
+                sharedBy: share.sharedBy,
+              },
+            ]
+          : [];
+      }
+      const file = files.find((item) => item._id === share.objectId);
+      return file
+        ? [
+            {
+              item: file,
+              itemType: 'file',
+              permissions: share.permissions,
+              sharedBy: share.sharedBy,
+            },
+          ]
+        : [];
+    });
+  },
   sharesForItem: async (itemId: string, itemType: 'file' | 'folder') =>
     (
-      await api.get<ApiResponse<ShareRecord[]>>(`/files/shares/${itemId}`, {
-        params: { itemType },
+      await api.post<ApiResponse<ShareRecord[]>>('/files/shares', {
+        itemId,
+        itemType,
       })
     ).data.data,
   shareItems: async (input: ShareInput) => {
@@ -194,6 +288,21 @@ export interface ShareRecord {
   permissions: Permission[];
   recipient: { name?: string; email: string } | null;
 }
+export interface SharedBy {
+  name?: string;
+  email: string;
+}
+interface DirectShareRecord {
+  objectType: 'file' | 'folder';
+  objectId: string;
+  permissions: Permission[];
+  sharedBy: SharedBy | null;
+}
+interface SharedWithMeResponse {
+  shares: DirectShareRecord[];
+  folders: StoredFolder[];
+  files: StoredFile[];
+}
 export interface SharedFolder extends StoredFolder {
   folders: SharedFolder[];
   files: StoredFile[];
@@ -202,5 +311,5 @@ export interface SharedEntry {
   item: StoredFile | SharedFolder;
   itemType: 'file' | 'folder';
   permissions: Permission[];
-  sharedBy: { name?: string; email: string } | null;
+  sharedBy: SharedBy | null;
 }

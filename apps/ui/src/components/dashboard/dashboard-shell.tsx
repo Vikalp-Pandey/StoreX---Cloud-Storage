@@ -1,9 +1,12 @@
-import { useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   Bell,
   ChevronDown,
+  FileText,
+  Folder,
   HardDrive,
   Layers,
   Loader2,
@@ -16,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { useLogout } from '@/hooks/useAuth';
+import { filesApi, type StoredFile } from '@/api/files.api';
 import {
   isNavigationItemActive,
   navigationGroups,
@@ -24,52 +28,52 @@ import {
 function WorkspaceSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <details className="group relative">
-      <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 rounded-lg bg-[#212121] px-3 transition hover:bg-[#2f2f2f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 [&::-webkit-details-marker]:hidden">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#3a3a3a] text-[#ececec]">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 rounded-lg bg-black px-3 transition hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 [&::-webkit-details-marker]:hidden">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-100">
           <HardDrive className="size-4" aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1 text-left">
-          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-[#b4b4b4]">
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
             Personal
           </span>
-          <span className="block truncate text-sm font-medium text-[#ececec]">
+          <span className="block truncate text-sm font-medium text-zinc-100">
             My workspace
           </span>
         </span>
         <ChevronDown
-          className="size-4 text-[#b4b4b4] transition group-open:rotate-180"
+          className="size-4 text-zinc-400 transition group-open:rotate-180"
           aria-hidden="true"
         />
       </summary>
 
-      <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-20 rounded-xl border border-white/10 bg-[#2f2f2f] p-2 shadow-2xl shadow-black/40">
-        <p className="px-2 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8e8e8e]">
+      <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-20 rounded-xl border border-zinc-800 bg-zinc-900 p-2 shadow-2xl shadow-black/40">
+        <p className="px-2 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
           Personal
         </p>
         <Link
           to="/dashboard"
           onClick={onNavigate}
-          className="flex items-center gap-3 rounded-lg bg-[#2f2f2f] px-3 py-2.5 text-sm text-white"
+          className="flex items-center gap-3 rounded-lg bg-zinc-900 px-3 py-2.5 text-sm text-white"
         >
           <HardDrive className="size-4" aria-hidden="true" />
           My workspace
-          <span className="ml-auto text-xs text-[#b4b4b4]">Owner</span>
+          <span className="ml-auto text-xs text-zinc-400">Owner</span>
         </Link>
-        <div className="my-2 h-px bg-[#3a3a3a]" />
+        <div className="my-2 h-px bg-zinc-800" />
         <div className="flex items-center justify-between px-2 py-1">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8e8e8e]">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
             Organizations
           </span>
           <Link
             to="/dashboard/organizations"
             onClick={onNavigate}
-            className="rounded-md p-1 text-[#b4b4b4] hover:bg-[#3a3a3a] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+            className="rounded-md p-1 text-zinc-400 hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             aria-label="Open organizations"
           >
             <Plus className="size-3.5" aria-hidden="true" />
           </Link>
         </div>
-        <p className="px-2 py-2 text-xs leading-5 text-[#b4b4b4]">
+        <p className="px-2 py-2 text-xs leading-5 text-zinc-400">
           No organization workspaces yet.
         </p>
       </div>
@@ -93,14 +97,14 @@ function SidebarContent({
   const logout = useLogout();
 
   return (
-    <div className="flex h-full flex-col bg-[#171717]">
+    <div className="flex h-full flex-col bg-black">
       <div
-        className={`flex h-16 items-center border-b border-white/5 ${
+        className={`flex h-16 items-center border-b border-zinc-800 ${
           collapsed ? 'justify-center px-2' : 'gap-3 px-5'
         }`}
       >
-        <span className="flex size-9 items-center justify-center rounded-full bg-[#2f2f2f]">
-          <Layers className="size-4 text-[#ececec]" aria-hidden="true" />
+        <span className="flex size-9 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900">
+          <Layers className="size-4 text-zinc-100" aria-hidden="true" />
         </span>
         {!collapsed && (
           <span className="text-sm font-bold tracking-[0.28em] text-white">
@@ -109,13 +113,13 @@ function SidebarContent({
         )}
       </div>
 
-      <div className="border-b border-white/5 p-3">
+      <div className="border-b border-zinc-800 p-3">
         {collapsed ? (
           <Link
             to="/dashboard"
             onClick={onNavigate}
             title="My workspace"
-            className="flex size-11 items-center justify-center rounded-lg bg-[#212121] text-[#d9d9d9] transition hover:bg-[#2f2f2f] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+            className="flex size-11 items-center justify-center rounded-lg bg-black text-zinc-200 transition hover:bg-zinc-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             aria-label="Open My workspace"
           >
             <HardDrive className="size-5" aria-hidden="true" />
@@ -132,7 +136,7 @@ function SidebarContent({
         {navigationGroups.map((group) => (
           <div className={collapsed ? 'mb-4' : 'mb-6'} key={group.label}>
             {!collapsed && (
-              <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8e8e8e]">
+              <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                 {group.label}
               </p>
             )}
@@ -148,12 +152,12 @@ function SidebarContent({
                     onClick={onNavigate}
                     aria-current={active ? 'page' : undefined}
                     title={collapsed ? item.label : undefined}
-                    className={`flex min-h-10 items-center rounded-lg text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${
+                    className={`flex min-h-10 items-center rounded-lg text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
                       collapsed ? 'justify-center px-2' : 'gap-3 px-3'
                     } ${
                       active
-                        ? 'bg-[#2f2f2f] text-white'
-                        : 'text-[#b4b4b4] hover:bg-[#2f2f2f] hover:text-[#ececec]'
+                        ? 'bg-zinc-900 text-white'
+                        : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100'
                     }`}
                   >
                     <Icon className="size-[18px]" aria-hidden="true" />
@@ -162,7 +166,7 @@ function SidebarContent({
                     )}
                     {active && !collapsed && (
                       <span
-                        className="ml-auto size-1.5 rounded-full bg-[#d9d9d9]"
+                        className="ml-auto size-1.5 rounded-full bg-zinc-200"
                         aria-hidden="true"
                       />
                     )}
@@ -175,7 +179,7 @@ function SidebarContent({
       </nav>
 
       <div
-        className={`space-y-3 border-t border-white/5 ${
+        className={`space-y-3 border-t border-zinc-800 ${
           collapsed ? 'p-3' : 'p-4'
         }`}
       >
@@ -183,16 +187,16 @@ function SidebarContent({
           <Link
             to="/dashboard/storage"
             onClick={onNavigate}
-            className="block rounded-lg bg-[#212121] p-3 transition hover:bg-[#2f2f2f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+            className="block rounded-lg bg-black p-3 transition hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
           >
             <div className="mb-2 flex items-center justify-between text-xs">
-              <span className="font-medium text-[#d9d9d9]">Storage</span>
-              <span className="text-[#b4b4b4]">0 B of 5 GB</span>
+              <span className="font-medium text-zinc-200">Storage</span>
+              <span className="text-zinc-400">0 B of 5 GB</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-[#3a3a3a]">
-              <div className="h-full w-0 rounded-full bg-[#b4b4b4]" />
+            <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+              <div className="h-full w-0 rounded-full bg-zinc-500" />
             </div>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-[#8e8e8e]">
+            <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500">
               <span>Free plan</span>
               <span>0% used</span>
             </div>
@@ -208,16 +212,16 @@ function SidebarContent({
         >
           <span
             title={collapsed ? displayName : undefined}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#3a3a3a] text-sm font-semibold text-[#ececec]"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-sm font-semibold text-zinc-100"
           >
             {displayName.charAt(0).toUpperCase()}
           </span>
           {!collapsed && (
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-[#ececec]">
+              <span className="block truncate text-sm font-medium text-zinc-100">
                 {displayName}
               </span>
-              <span className="block truncate text-xs text-[#8e8e8e]">
+              <span className="block truncate text-xs text-zinc-500">
                 {email}
               </span>
             </span>
@@ -229,7 +233,7 @@ function SidebarContent({
               logout.mutate();
             }}
             disabled={logout.isPending}
-            className="rounded-lg p-2 text-[#b4b4b4] transition hover:bg-[#3a3a3a] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+            className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             aria-label="Log out"
           >
             {logout.isPending ? (
@@ -280,7 +284,7 @@ export function DashboardSidebar({
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 z-30 hidden border-r border-white/5 bg-[#171717] transition-[width] duration-300 lg:block ${
+        className={`fixed inset-y-0 left-0 z-30 hidden border-r border-zinc-800 bg-black transition-[width] duration-300 lg:block ${
           collapsed ? 'w-20' : 'w-72'
         }`}
       >
@@ -290,7 +294,7 @@ export function DashboardSidebar({
           aria-expanded={!collapsed}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="absolute -right-3 top-20 z-40 flex size-7 items-center justify-center rounded-full border border-white/10 bg-[#2f2f2f] text-[#c5c5c5] shadow-lg shadow-black/30 transition hover:bg-[#3a3a3a] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+          className="absolute -right-3 top-20 z-40 flex size-7 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-300 shadow-lg shadow-black/30 transition hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
         >
           {collapsed ? (
             <PanelLeftOpen className="size-4" aria-hidden="true" />
@@ -310,7 +314,7 @@ export function DashboardSidebar({
         <div className="fixed inset-0 z-50 lg:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-[#0d0d0d]/80 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
             onClick={onClose}
             aria-label="Close navigation"
           />
@@ -318,12 +322,12 @@ export function DashboardSidebar({
             role="dialog"
             aria-modal="true"
             aria-label="Dashboard navigation"
-            className="relative h-full w-[min(20rem,calc(100vw-2rem))] border-r border-white/5 bg-[#171717] shadow-2xl shadow-black"
+            className="relative h-full w-[min(20rem,calc(100vw-2rem))] border-r border-zinc-800 bg-black shadow-2xl shadow-black"
           >
             <button
               type="button"
               onClick={onClose}
-              className="absolute right-3 top-3 z-10 rounded-lg bg-[#3a3a3a] p-2 text-[#d9d9d9] hover:bg-[#4a4a4a] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+              className="absolute right-3 top-3 z-10 rounded-lg bg-zinc-800 p-2 text-zinc-200 hover:bg-zinc-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
               aria-label="Close navigation"
             >
               <X className="size-4" aria-hidden="true" />
@@ -343,50 +347,123 @@ export function DashboardSidebar({
 }
 
 export function DashboardTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
+  const navigate = useNavigate();
+  const input = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState('');
+  const [query, setQuery] = useState('');
+  const results = useQuery({
+    queryKey: ['files', 'search', query],
+    queryFn: () => filesApi.searchItems(query),
+    enabled: Boolean(query),
+  });
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(value.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [value]);
+
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        input.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', focusSearch);
+    return () => window.removeEventListener('keydown', focusSearch);
+  }, []);
+
+  const openResult = (result: NonNullable<typeof results.data>[number]) => {
+    filesApi.recordRecent({
+      itemId: result.item._id,
+      itemType: result.itemType,
+    });
+    if (result.itemType === 'folder') {
+      navigate('/dashboard/folders/' + result.item._id);
+    } else {
+      filesApi.openFile((result.item as StoredFile).url);
+    }
+    setValue('');
+    setQuery('');
+  };
+
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-white/5 bg-[#212121]/95 px-4 backdrop-blur-xl sm:px-6 lg:px-10">
+    <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-zinc-800 bg-black/95 px-4 backdrop-blur-xl sm:px-6 lg:px-10">
       <button
         type="button"
         onClick={onOpenMenu}
-        className="rounded-lg p-2.5 text-[#d9d9d9] hover:bg-[#2f2f2f] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 lg:hidden"
+        className="rounded-lg p-2.5 text-zinc-200 hover:bg-zinc-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 lg:hidden"
         aria-label="Open navigation"
       >
         <Menu className="size-5" aria-hidden="true" />
       </button>
 
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-[#ececec]">
+        <p className="truncate text-sm font-medium text-zinc-100">
           Personal workspace
         </p>
-        <p className="text-xs text-[#8e8e8e]">Owner</p>
+        <p className="text-xs text-zinc-500">Owner</p>
       </div>
 
       <form
-        className="mx-auto hidden w-full max-w-xl md:block"
+        className="relative mx-auto hidden w-full max-w-xl md:block"
         role="search"
         onSubmit={(event) => event.preventDefault()}
       >
         <label className="relative block">
           <span className="sr-only">Search files and folders</span>
           <Search
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8e8e8e]"
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500"
             aria-hidden="true"
           />
           <input
+            ref={input}
             type="search"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
             placeholder="Search files and folders"
-            className="h-10 w-full rounded-full border border-white/10 bg-[#2f2f2f] pl-10 pr-16 text-sm text-[#ececec] outline-none placeholder:text-[#8e8e8e] focus:border-white/20 focus:ring-2 focus:ring-white/10"
+            className="h-10 w-full rounded-full border border-zinc-800 bg-zinc-900 pl-10 pr-16 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600 focus:ring-2 focus:ring-zinc-800"
           />
-          <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-white/10 bg-[#2f2f2f] px-1.5 py-0.5 text-[10px] text-[#8e8e8e]">
+          <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500">
             Ctrl K
           </kbd>
         </label>
+        {query && (
+          <div className="absolute left-0 right-0 top-12 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl">
+            {results.isLoading ? (
+              <p className="px-4 py-5 text-sm text-zinc-500">Searching...</p>
+            ) : results.isError ? (
+              <p className="px-4 py-5 text-sm text-red-400">Search failed.</p>
+            ) : results.data?.length ? (
+              <ul className="max-h-80 overflow-y-auto py-2">
+                {results.data.map((result) => {
+                  const Icon = result.itemType === 'folder' ? Folder : FileText;
+                  return (
+                    <li key={[result.itemType, result.item._id].join('-')}>
+                      <button
+                        type="button"
+                        onClick={() => openResult(result)}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-zinc-200 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400"
+                      >
+                        <Icon className="size-4 text-zinc-500" aria-hidden="true" />
+                        <span className="min-w-0 flex-1 truncate">{result.item.name}</span>
+                        <span className="text-xs capitalize text-zinc-600">{result.itemType}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="px-4 py-5 text-sm text-zinc-500">No matching items.</p>
+            )}
+          </div>
+        )}
       </form>
 
       <button
         type="button"
         onClick={() => toast.info('You have no new notifications.')}
-        className="ml-auto rounded-lg p-2.5 text-[#c5c5c5] transition hover:bg-[#2f2f2f] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 md:ml-0"
+        className="ml-auto rounded-lg p-2.5 text-zinc-300 transition hover:bg-zinc-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 md:ml-0"
         aria-label="Notifications"
       >
         <Bell className="size-4" aria-hidden="true" />

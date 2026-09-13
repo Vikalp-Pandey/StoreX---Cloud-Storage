@@ -1,0 +1,34 @@
+model
+  schema 1.1
+
+type user
+
+type drive
+  relations
+    define owner: [user]
+    define can_read: owner
+    define can_create: owner
+    define can_delete: owner
+    define can_share: owner
+
+type folder
+  relations
+    define parent: [drive, folder]
+    define owner: [user]
+    define reader: [user]
+    define creator: [user]
+    define deleter: [user]
+    define can_read: owner or reader or can_read from parent
+    define can_create: owner or creator or can_create from parent
+    define can_delete: owner or deleter or can_delete from parent
+    define can_share: owner
+
+type file
+  relations
+    define parent: [drive, folder]
+    define owner: [user]
+    define reader: [user]
+    define deleter: [user]
+    define can_read: owner or reader or can_read from parent
+    define can_delete: owner or deleter or can_delete from parent
+    define can_share: owner

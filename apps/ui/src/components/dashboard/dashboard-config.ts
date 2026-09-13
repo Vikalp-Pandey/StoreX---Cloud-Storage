@@ -11,13 +11,13 @@ import {
 } from 'lucide-react';
 
 export const primaryButton =
-  'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-transparent bg-[#f4f4f4] px-4 text-sm font-medium text-[#0d0d0d] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45';
+  'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-600 bg-zinc-700 px-4 text-sm font-medium text-white transition hover:border-zinc-500 hover:bg-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-300 disabled:cursor-not-allowed disabled:opacity-45';
 
 export const secondaryButton =
-  'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#2f2f2f] px-4 text-sm font-medium text-[#ececec] transition hover:bg-[#3a3a3a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-45';
+  'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-4 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:cursor-not-allowed disabled:opacity-45';
 
 export const panelClass =
-  'rounded-2xl border border-white/10 bg-[#262626] shadow-sm shadow-black/10';
+  'rounded-2xl border border-zinc-800 bg-zinc-950 shadow-sm shadow-black/10';
 
 type NavigationItem = {
   label: string;
@@ -80,7 +80,7 @@ export const sectionDetails: Record<
   },
   trash: {
     title: 'Trash',
-    description: 'Restore deleted items or remove them permanently.',
+    description: 'Restore deleted items back to your drive.',
   },
   storage: {
     title: 'Storage',

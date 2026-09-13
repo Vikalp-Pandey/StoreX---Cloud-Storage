@@ -1,10 +1,49 @@
 import { asyncHandler, sendResponse } from '@packages/httputils';
 import { Context } from 'hono';
-import { SharedItem as sharedItem } from '@/models/fileModels/sharedItem.model';
-import { File as Files } from '@/models/fileModels/file.model';
-import { Folder as Folders } from '@/models/fileModels/folder.model';
+import { DirectShare } from '@/models/fileModels/directShare.model';
+import { File } from '@/models/fileModels/file.model';
+import { Folder } from '@/models/fileModels/folder.model';
 import User from '@/models/authModels/user.model';
-import * as fileService from '@/services/fileServices/file.service';
+import {
+  isAllowed,
+  replaceDirectPermissions,
+  type Permission,
+} from '@/services/fileServices/authorization.service';
+
+const allowedPermissions = new Set<Permission>(['read', 'create', 'delete']);
+const MAX_SHARED_TREE_DEPTH = 20;
+
+type FolderTreeNode = Record<string, unknown> & {
+  _id: unknown;
+  folders?: FolderTreeNode[];
+  files?: Record<string, unknown>[];
+};
+
+async function loadSharedFolderTree(
+  folder: FolderTreeNode,
+  depth = 1,
+): Promise<FolderTreeNode> {
+  if (depth >= MAX_SHARED_TREE_DEPTH) {
+    return { ...folder, folders: [], files: [] };
+  }
+
+  const folderId = String(folder._id);
+  const [childFolders, childFiles] = await Promise.all([
+    Folder.find({ parent: folderId }).lean(),
+    File.find({ parent: folderId }).lean(),
+  ]);
+  const folders = await Promise.all(
+    childFolders.map((child) =>
+      loadSharedFolderTree(child as unknown as FolderTreeNode, depth + 1),
+    ),
+  );
+
+  return {
+    ...folder,
+    folders,
+    files: childFiles as unknown as Record<string, unknown>[],
+  };
+}
 
 export const shareItem = asyncHandler(async (c: Context) => {
   const senderId = c.get('user')?._id?.toString();
@@ -14,209 +53,134 @@ export const shareItem = asyncHandler(async (c: Context) => {
   if (!email) return sendResponse(c, 400, 'Recipient email is required');
   if (!fileId && !folderId)
     return sendResponse(c, 400, 'Target ID (file or folder) is required');
-
-  if (!permissions || !Array.isArray(permissions) || permissions.length === 0) {
+  if (fileId && folderId)
+    return sendResponse(c, 400, 'Provide either fileId or folderId, not both');
+  if (!Array.isArray(permissions) || permissions.length === 0)
     return sendResponse(c, 400, 'At least one permission is required');
-  }
+  if (
+    permissions.some(
+      (permission: unknown) =>
+        typeof permission !== 'string' ||
+        !allowedPermissions.has(permission as Permission),
+    )
+  )
+    return sendResponse(c, 400, 'Invalid permission');
+  if (fileId && permissions.includes('create'))
+    return sendResponse(
+      c,
+      400,
+      'Create permission can only be granted on folders',
+    );
 
-  const recipientUser = await User.findOne({ email });
-  if (!recipientUser)
-    return sendResponse(c, 404, 'User with this email not found');
+  const type = folderId ? 'folder' : 'file';
+  const id = String(folderId || fileId);
+  const canShare = await isAllowed({
+    userId: senderId,
+    permission: 'share',
+    type,
+    id,
+  });
+  if (!canShare)
+    return sendResponse(c, 403, 'Access Denied: share permission required');
 
-  const recipientId = recipientUser._id.toString();
-  if (recipientId === senderId)
-    return sendResponse(c, 400, 'Cannot share items with yourself');
+  const recipient = await User.findOne({ email }).select('_id');
+  if (!recipient) return sendResponse(c, 404, 'User with this email not found');
 
-  if (fileId) {
-    const file = await Files.findOne({ _id: fileId, user: senderId });
-    if (!file)
-      return sendResponse(c, 403, 'Access Denied: You do not own this file');
-  }
+  const recipientId = String(recipient._id);
+  const filter = { objectType: type, objectId: id, recipientId };
+  const existing = await DirectShare.findOne(filter).lean();
+  const previous = existing?.permissions || [];
+  const next = [...new Set(permissions)];
 
-  if (folderId) {
-    const folder = await Folders.findOne({ _id: folderId, user: senderId });
-    if (!folder)
-      return sendResponse(c, 403, 'Access Denied: You do not own this folder');
-  }
-
-  // This filter prevents the E11000 error by finding the exact combination of user+item
-  const shareFilter = {
+  await replaceDirectPermissions({
     userId: recipientId,
-    fileId: fileId || null,
-    folderId: folderId || null,
-  };
+    type,
+    id,
+    previous,
+    next,
+  });
 
-  try {
-    const shareRecord = await sharedItem.findOneAndUpdate(
-      shareFilter,
-      {
-        $set: { permissions },
-        $setOnInsert: { sharedBy: senderId },
-      },
-      {
-        upsert: true, // Create if not exists, Update if does
-        runValidators: true,
-      },
-    );
-    console.log(shareRecord);
-  } catch (error) {
-    console.log(error);
-  }
-
-  if (folderId) {
-    await fileService.shareFolderRecursive(
-      folderId,
-      senderId,
-      recipientId,
-      permissions,
-    );
-  }
+  await DirectShare.findOneAndUpdate(
+    filter,
+    { $set: { permissions: next, sharedBy: senderId } },
+    { upsert: true, runValidators: true, new: true },
+  );
 
   return sendResponse(c, 200, 'Item shared successfully');
 });
 
 export const getSharedWithMe = asyncHandler(async (c: Context) => {
-  const userId = c.get('user')?._id?.toString();
+  const recipientId = c.get('user')?._id?.toString();
+  if (!recipientId) return sendResponse(c, 401, 'Authentication Required');
 
-  if (!userId) {
-    return sendResponse(c, 401, 'Authentication Required');
-  }
-
-  const shares = await sharedItem.find({ userId }).lean();
-
-  const sharedFolderIds = shares
-    .map((s) => s.folderId?.toString())
-    .filter(Boolean)
-    .filter((id): id is string => !!id);
-  const sharedFileIds = shares
-    .map((s) => s.fileId?.toString())
-    .filter(Boolean)
-    .filter((id): id is string => !!id);
-
-  const [folders, files] = await Promise.all([
-    Folders.find({ _id: { $in: sharedFolderIds } }).lean(),
-    Files.find({ _id: { $in: sharedFileIds } }).lean(),
-  ]);
-
-  const rootFolders = folders.filter((folder) => {
-    const parentId = folder.parent?.toString();
-    return !parentId || !sharedFolderIds.includes(parentId);
-  });
-
-  const rootFiles = files.filter((file) => {
-    const parentId = file.parent?.toString();
-    return !parentId || !sharedFolderIds.includes(parentId);
-  });
-
-  const sharedByIds = shares.map((s) => s.sharedBy).filter(Boolean);
-  const sharedByUsers = await User.find({ _id: { $in: sharedByIds } })
-    .select('name email')
+  const shares = await DirectShare.find({ recipientId })
+    .populate('sharedBy', 'name email')
+    .sort({ createdAt: -1 })
+    .limit(100)
     .lean();
+  const folderIds = shares
+    .filter((share) => share.objectType === 'folder')
+    .map((share) => share.objectId);
+  const fileIds = shares
+    .filter((share) => share.objectType === 'file')
+    .map((share) => share.objectId);
+  const [folders, files] = await Promise.all([
+    Folder.find({ _id: { $in: folderIds } }).lean(),
+    File.find({ _id: { $in: fileIds } }).lean(),
+  ]);
+  const folderTrees = await Promise.all(
+    folders.map((folder) =>
+      loadSharedFolderTree(folder as unknown as FolderTreeNode),
+    ),
+  );
 
-  const result = [];
-
-  for (const folder of rootFolders) {
-    const share = shares.find(
-      (s) => s.folderId?.toString() === folder._id.toString(),
-    );
-    const owner = sharedByUsers.find(
-      (u) => u._id.toString() === share?.sharedBy?.toString(),
-    );
-
-    const fullTree = await fileService.getSharedFolderRecursive(
-      folder._id.toString(),
-    );
-
-    result.push({
-      item: {
-        ...folder,
-        folders: fullTree.folders, // Nested sub-folders
-        files: fullTree.files, // Nested sub-files
-      },
-      itemType: 'folder',
-      permissions: share?.permissions || [],
-      sharedBy: owner || null,
-      isShared: true,
-    });
-  }
-
-  for (const file of rootFiles) {
-    const share = shares.find(
-      (s) => s.fileId?.toString() === file._id.toString(),
-    );
-    const owner = sharedByUsers.find(
-      (u) => u._id.toString() === share?.sharedBy?.toString(),
-    );
-
-    result.push({
-      item: file,
-      itemType: 'file',
-      permissions: share?.permissions || [],
-      sharedBy: owner || null,
-      isShared: true,
-    });
-  }
-  for (const element of result) {
-    console.log(element.item);
-  }
-
-  return sendResponse(c, 200, 'Shared items retrieved successfully', result);
+  return sendResponse(c, 200, 'Shared items retrieved successfully', {
+    shares,
+    folders: folderTrees,
+    files,
+  });
 });
 
 export const getSharesForItem = asyncHandler(async (c: Context) => {
   const userId = c.get('user')?._id?.toString();
-  const { itemId } = c.req.param();
-  const { itemType } = c.req.query(); // 'file' or 'folder'
-  if (!userId) {
-    return sendResponse(c, 401, 'Authentication Required');
-  }
-  const filter: any = {};
-  if (itemType === 'file') {
-    const file = await Files.findOne({ _id: itemId, user: userId });
-    if (!file) {
-      return sendResponse(c, 403, 'You can only view shares for items you own');
-    }
-    filter.fileId = itemId;
-  } else {
-    const folder = await Folders.findOne({ _id: itemId, user: userId });
-    if (!folder) {
-      return sendResponse(c, 403, 'You can only view shares for items you own');
-    }
-    filter.folderId = itemId;
-  }
-  const shares = await sharedItem.find(filter).lean();
+  const { itemId, itemType } = await c.req.json();
+  const type = itemType === 'file' ? 'file' : 'folder';
+  if (!userId) return sendResponse(c, 401, 'Authentication Required');
+
+  const canShare = await isAllowed({
+    userId,
+    permission: 'share',
+    type,
+    id: itemId,
+  });
+  if (!canShare) return sendResponse(c, 403, 'Share permission required');
+
+  const shares = await DirectShare.find({ objectType: type, objectId: itemId })
+    .sort({ createdAt: -1 })
+    .lean();
   const enrichedShares = await Promise.all(
-    shares.map(async (share) => {
-      const recipient = await User.findById(share.userId)
+    shares.map(async (share) => ({
+      _id: share._id,
+      recipient: await User.findById(share.recipientId)
         .select('name email')
-        .lean();
-      return {
-        _id: share._id,
-        recipient,
-        permissions: share.permissions,
-        sharedAt: (share as any).createdAt,
-      };
-    }),
+        .lean(),
+      permissions: share.permissions,
+      sharedAt: share.createdAt,
+    })),
   );
+
   return sendResponse(c, 200, 'Shares retrieved', enrichedShares);
 });
 
 export const searchUsers = asyncHandler(async (c: Context) => {
   const userId = c.get('user')?._id?.toString();
-  const { q } = c.req.query();
-
-  if (!userId) {
-    return sendResponse(c, 401, 'Authentication Required');
-  }
-
-  if (!q || typeof q !== 'string' || q.trim().length < 1) {
-    return sendResponse(c, 200, 'No results', []);
-  }
+  const q = c.req.query('q');
+  if (!userId) return sendResponse(c, 401, 'Authentication Required');
+  if (!q?.trim()) return sendResponse(c, 200, 'No results', []);
 
   const searchRegex = new RegExp(q.trim(), 'i');
-
   const users = await User.find({
-    _id: { $ne: userId }, // Exclude self
+    _id: { $ne: userId },
     $or: [
       { name: { $regex: searchRegex } },
       { email: { $regex: searchRegex } },
@@ -229,14 +193,6 @@ export const searchUsers = asyncHandler(async (c: Context) => {
   return sendResponse(c, 200, 'Users found', users);
 });
 
-const shareController = {
-  shareItem,
-  getSharedWithMe,
-  getSharesForItem,
-  searchUsers,
-};
-
-export default shareController;
-
-// Existing local controller export name.
 export { shareItem as shareItems };
+
+export default { shareItem, getSharedWithMe, getSharesForItem, searchUsers };
