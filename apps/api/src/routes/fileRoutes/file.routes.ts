@@ -6,65 +6,85 @@ import {
   searchUsers,
 } from '@/controllers/fileControllers/share.controller';
 import { authenticateUser, validateUser } from '@/middlewares/user.middleware';
-import { validatePermissions } from '@/middlewares/fileaccess.middleware';
+import { requirePermission } from '@/middlewares/openfga.middleware';
 
 const files = new Hono();
 files.use('*', validateUser);
 
 // Existing local aliases.
 files.get('/getAllItems', authenticateUser, fileController.getAllItems);
-files.get('/getItems', authenticateUser, fileController.getItems);
+files.post(
+  '/getItems',
+  authenticateUser,
+  requirePermission('read'),
+  fileController.getItems,
+);
 files.post(
   '/createFile',
   authenticateUser,
-  validatePermissions('create'),
+  requirePermission('create'),
   fileController.createFile,
 );
 files.post(
   '/createFolder',
   authenticateUser,
-  validatePermissions('create'),
+  requirePermission('create'),
   fileController.createFolder,
 );
 files.put('/renameFolder', authenticateUser, fileController.renameFolder);
 files.delete(
   '/deleteFile',
   authenticateUser,
-  validatePermissions('delete'),
+  requirePermission('delete'),
   fileController.deleteFile,
 );
 files.delete(
   '/deleteFolder',
   authenticateUser,
-  validatePermissions('delete'),
+  requirePermission('delete'),
   fileController.deleteFolder,
 );
 files.post('/shareItems', authenticateUser, fileController.shareItems);
 
 // Route names and middleware placement from the linked repository.
-files.post('/file-upload',
+files.post(
+  '/file-upload',
   authenticateUser,
-  validatePermissions('create'),
-  fileController.fileUpload);
+  requirePermission('create'),
+  fileController.fileUpload,
+);
 files.post(
   '/save-file',
   authenticateUser,
-  validatePermissions('create'),
+  requirePermission('create'),
   fileController.createFile,
 );
 files.post(
   '/save-folder',
   authenticateUser,
-  validatePermissions('create'),
+  requirePermission('create'),
   fileController.saveFolder,
 );
-files.get('/get-items', authenticateUser, fileController.getSharedItems);
-
-
-
+files.post(
+  '/get-items',
+  authenticateUser,
+  requirePermission('read'),
+  fileController.getItems,
+);
+files.get('/search', authenticateUser, fileController.searchItems);
 files.post('/share', authenticateUser, fileController.shareItems);
 files.get('/shared-with-me', authenticateUser, getSharedWithMe);
 files.get('/search-users', authenticateUser, searchUsers);
-files.get('/shares/:itemId', authenticateUser, getSharesForItem);
+files.post('/shares', authenticateUser, getSharesForItem);
+
+files.get('/trash', authenticateUser, fileController.getTrash);
+files.post('/trash/restore', authenticateUser, fileController.restoreTrashItem);
+files.get('/recent', authenticateUser, fileController.getRecent);
+files.post(
+  '/recent/open',
+  authenticateUser,
+  requirePermission('read'),
+  fileController.recordRecent,
+);
 
 export default files;

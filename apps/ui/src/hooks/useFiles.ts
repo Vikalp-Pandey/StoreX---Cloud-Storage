@@ -16,7 +16,48 @@ export const useGetItems = (parent?: string) =>
   useQuery({
     queryKey: fileQueryKeys.items(parent),
     queryFn: () => filesApi.getItems(parent),
+    enabled: Boolean(parent),
   });
+
+export const useGetSharedWithMe = () =>
+  useQuery({
+    queryKey: ['files', 'shared'],
+    queryFn: filesApi.sharedWithMe,
+  });
+
+export const useGetTrash = () =>
+  useQuery({
+    queryKey: ['files', 'trash'],
+    queryFn: filesApi.getTrash,
+  });
+
+export const useRestoreTrashItem = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: filesApi.restoreTrashItem,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['files'] });
+    },
+  });
+};
+
+export const useGetRecent = () =>
+  useQuery({
+    queryKey: ['files', 'recent'],
+    queryFn: filesApi.getRecent,
+  });
+
+export const useRecordRecent = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: filesApi.recordRecent,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['files', 'recent'] });
+    },
+  });
+};
 
 export const useCreateFile = () => {
   const queryClient = useQueryClient();

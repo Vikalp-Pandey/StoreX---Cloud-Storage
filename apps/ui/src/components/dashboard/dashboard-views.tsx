@@ -1,18 +1,12 @@
-import {
-  UploadButton,
-  ShareButton,
-  FileActions,
-  SharedView,
-} from './file-features';
+import { UploadButton, ItemActionsMenu, SharedView } from './file-features';
 import { useState, type ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   Building2,
   ChevronRight,
   CircleHelp,
   Clock3,
-  CreditCard,
   FileUp,
   Folder,
   FolderPlus,
@@ -20,6 +14,7 @@ import {
   HardDrive,
   List,
   Plus,
+  RotateCcw,
   ShieldCheck,
   Trash2,
   UserPlus,
@@ -31,12 +26,26 @@ import {
   secondaryButton,
 } from '@/components/dashboard/dashboard-config';
 import { FolderItem } from '@/components/dashboard/folder-item';
-import type { StoredFolder } from '@/api/files.api';
+import {
+  filesApi,
+  type SharedEntry,
+  type SharedFolder,
+  type StoredFile,
+  type StoredFolder,
+} from '@/api/files.api';
 import {
   useCreateFolder,
   useGetAllItems,
+  useGetItems,
+  useGetRecent,
+  useGetSharedWithMe,
+  useGetTrash,
   useRenameFolder,
+  useRestoreTrashItem,
+  useRecordRecent,
 } from '@/hooks/useFiles';
+
+const MAX_NESTING_DEPTH = 20;
 
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';
@@ -52,18 +61,13 @@ const formatBytes = (bytes: number) => {
   );
 };
 
-const getStoredSizeInBytes = (size: string) => {
-  const bytes = Number(size);
-  return Number.isFinite(bytes) ? bytes : 0;
-};
-
 const formatStoredSize = (size: string) => {
   const bytes = Number(size);
   return Number.isFinite(bytes) ? formatBytes(bytes) : size;
 };
 
 const isDirectChild = (
-  parent: string | undefined,
+  parent: string | null | undefined,
   activeFolderId: string | undefined,
 ) => (activeFolderId ? parent === activeFolderId : !parent);
 
@@ -87,6 +91,53 @@ const getFolderTrail = (
   return trail;
 };
 
+type SharedFolderLocation = {
+  folder: SharedFolder;
+  trail: SharedFolder[];
+  entry: SharedEntry;
+};
+
+const findSharedFolderLocation = (
+  entries: SharedEntry[],
+  folderId: string | undefined,
+): SharedFolderLocation | undefined => {
+  if (!folderId) return undefined;
+
+  const visit = (
+    folder: SharedFolder,
+    entry: SharedEntry,
+    trail: SharedFolder[],
+  ): SharedFolderLocation | undefined => {
+    const nextTrail = [...trail, folder];
+    if (folder._id === folderId) return { folder, trail: nextTrail, entry };
+
+    for (const child of folder.folders || []) {
+      const match = visit(child, entry, nextTrail);
+      if (match) return match;
+    }
+
+    return undefined;
+  };
+
+  for (const entry of entries) {
+    if (entry.itemType !== 'folder') continue;
+    const match = visit(entry.item as SharedFolder, entry, []);
+    if (match) return match;
+  }
+
+  return undefined;
+};
+
+const withSharedMetadata = <T extends StoredFile | StoredFolder>(
+  item: T,
+  entry: SharedEntry,
+): T => ({
+  ...item,
+  permissions: entry.permissions,
+  sharedBy: entry.sharedBy,
+  isShared: true,
+});
+
 function PageHeader({
   title,
   description,
@@ -97,18 +148,18 @@ function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-5 border-b border-white/5 pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex flex-col gap-5 border-b border-zinc-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <div className="mb-2 flex items-center gap-2 text-xs text-[#8e8e8e]">
+        <div className="mb-2 flex items-center gap-2 text-xs text-zinc-500">
           <HardDrive className="size-3.5" aria-hidden="true" />
           <span>Personal workspace</span>
           <span aria-hidden="true">/</span>
-          <span className="text-[#c5c5c5]">{title}</span>
+          <span className="text-zinc-300">{title}</span>
         </div>
         <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
           {title}
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#b4b4b4]">
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
           {description}
         </p>
       </div>
@@ -117,59 +168,70 @@ function PageHeader({
   );
 }
 
-function StatCard({
-  label,
-  value,
-  hint,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  icon: LucideIcon;
-}) {
-  return (
-    <div className={`${panelClass} p-4 sm:p-5`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-medium text-[#8e8e8e]">{label}</p>
-          <p className="mt-2 text-xl font-semibold text-[#ececec]">{value}</p>
-          <p className="mt-1 text-xs text-[#8e8e8e]">{hint}</p>
-        </div>
-        <span className="flex size-9 items-center justify-center rounded-xl bg-[#2f2f2f] text-[#b4b4b4]">
-          <Icon className="size-4" aria-hidden="true" />
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function DriveView() {
   const [view, setView] = useState<'list' | 'grid'>('list');
   const location = useLocation();
   const filesQuery = useGetAllItems();
+  const sharedQuery = useGetSharedWithMe();
   const createFolder = useCreateFolder();
   const renameFolder = useRenameFolder();
+  const recordRecent = useRecordRecent();
+
   const activeFolderId = location.pathname.match(
     /^\/dashboard\/folders\/([^/]+)\/?$/,
   )?.[1];
+  const activeItemsQuery = useGetItems(activeFolderId);
   const allFiles = filesQuery.data?.[0] || [];
   const allFolders = filesQuery.data?.[1] || [];
-  const files = allFiles.filter((file) =>
-    isDirectChild(file.parent, activeFolderId),
+  const sharedEntries = sharedQuery.data || [];
+  const sharedFolderLocation = findSharedFolderLocation(
+    sharedEntries,
+    activeFolderId,
   );
-  const folders = allFolders.filter((folder) =>
-    isDirectChild(folder.parent, activeFolderId),
-  );
-  const currentFolder = allFolders.find(
+  const currentOwnedFolder = allFolders.find(
     (folder) => folder._id === activeFolderId,
   );
-  const folderTrail = getFolderTrail(allFolders, activeFolderId);
-  const isLoadingFiles = filesQuery.isLoading;
-  const usedBytes = files.reduce(
-    (total, file) => total + getStoredSizeInBytes(file.size),
-    0,
-  );
+  const currentFolder = currentOwnedFolder || sharedFolderLocation?.folder;
+  const folderTrail = sharedFolderLocation
+    ? sharedFolderLocation.trail
+    : getFolderTrail(allFolders, activeFolderId);
+  const decorateActiveItem = <T extends StoredFile | StoredFolder>(item: T) =>
+    sharedFolderLocation
+      ? withSharedMetadata(item, sharedFolderLocation.entry)
+      : item;
+  const files: StoredFile[] = activeFolderId
+    ? (activeItemsQuery.data?.files || []).map(decorateActiveItem)
+    : [
+        ...allFiles.filter((file) => isDirectChild(file.parent, undefined)),
+        ...sharedEntries
+          .filter((entry) => entry.itemType === 'file')
+          .map((entry) => withSharedMetadata(entry.item as StoredFile, entry)),
+      ];
+  const folders: StoredFolder[] = activeFolderId
+    ? (activeItemsQuery.data?.folders || []).map(decorateActiveItem)
+    : [
+        ...allFolders.filter((folder) =>
+          isDirectChild(folder.parent, undefined),
+        ),
+        ...sharedEntries
+          .filter((entry) => entry.itemType === 'folder')
+          .map((entry) =>
+            withSharedMetadata(entry.item as SharedFolder, entry),
+          ),
+      ];
+  const isSharedLocation = Boolean(sharedFolderLocation);
+  const canCreateHere =
+    !isSharedLocation ||
+    sharedFolderLocation?.entry.permissions.includes('create') === true;
+  const isLoadingFiles =
+    filesQuery.isLoading ||
+    (!activeFolderId && sharedQuery.isLoading) ||
+    Boolean(activeFolderId && activeItemsQuery.isLoading);
+  const hasFileQueryError =
+    filesQuery.isError ||
+    (!activeFolderId && sharedQuery.isError) ||
+    Boolean(activeFolderId && activeItemsQuery.isError);
+  const nestingLimitReached = folderTrail.length >= MAX_NESTING_DEPTH;
 
   const handleCreateFolder = () => {
     const folderNumber = folders.length + 1;
@@ -212,58 +274,43 @@ function DriveView() {
             ? 'View and manage this folder’s direct children.'
             : 'View and manage files in your personal workspace.'
         }
-        actions={<UploadButton parent={activeFolderId} />}
       />
 
-      <section
-        className="grid gap-3 sm:grid-cols-3"
-        aria-label="Workspace summary"
-      >
-        <StatCard
-          label="Storage used"
-          value={formatBytes(usedBytes)}
-          hint="Files in this folder"
-          icon={HardDrive}
-        />
-        <StatCard
-          label="Items"
-          value={(files.length + folders.length).toString()}
-          hint="Files and folders"
-          icon={Folder}
-        />
-        <StatCard
-          label="Current plan"
-          value="Free"
-          hint="100 MB per file"
-          icon={CreditCard}
-        />
-      </section>
+      {nestingLimitReached && (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-300/20 bg-amber-300/5 px-4 py-3 text-xs text-amber-100"
+        >
+          Maximum nesting depth reached. This level cannot contain additional
+          files or folders.
+        </div>
+      )}
 
       <section
-        className={`${panelClass} overflow-hidden`}
+        className={`${panelClass} overflow-visible`}
         aria-labelledby="drive-browser-title"
       >
-        <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex flex-col gap-4 border-b border-zinc-800 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <nav
             className="flex items-center gap-1 text-sm"
             aria-label="Breadcrumb"
           >
-            <Link to="/dashboard" className="text-[#d9d9d9] hover:text-white">
+            <Link to="/dashboard" className="text-zinc-200 hover:text-white">
               My Drive
             </Link>
             {folderTrail.length > 0 ? (
               folderTrail.map((folder, index) => (
                 <span key={folder._id} className="flex items-center gap-1">
                   <ChevronRight
-                    className="size-4 text-[#676767]"
+                    className="size-4 text-zinc-600"
                     aria-hidden="true"
                   />
                   {index === folderTrail.length - 1 ? (
-                    <span className="text-[#b4b4b4]">{folder.name}</span>
+                    <span className="text-zinc-400">{folder.name}</span>
                   ) : (
                     <Link
                       to={`/dashboard/folders/${folder._id}`}
-                      className="text-[#d9d9d9] hover:text-white"
+                      className="text-zinc-200 hover:text-white"
                     >
                       {folder.name}
                     </Link>
@@ -273,20 +320,27 @@ function DriveView() {
             ) : (
               <>
                 <ChevronRight
-                  className="size-4 text-[#676767]"
+                  className="size-4 text-zinc-600"
                   aria-hidden="true"
                 />
-                <span className="text-[#8e8e8e]">All files</span>
+                <span className="text-zinc-500">All files</span>
               </>
             )}
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <UploadButton
+              parent={activeFolderId}
+              destinationName={currentFolder?.name || 'My Drive'}
+              disabled={!canCreateHere || nestingLimitReached}
+            />
             <button
               type="button"
               onClick={handleCreateFolder}
-              disabled={createFolder.isPending}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-white/15 bg-[#3a3a3a] px-3 text-xs font-medium text-[#ececec] transition hover:border-white/20 hover:bg-[#4a4a4a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={
+                createFolder.isPending || !canCreateHere || nestingLimitReached
+              }
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-xs font-medium text-zinc-100 transition hover:border-zinc-600 hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <FolderPlus className="size-4" aria-hidden="true" />
               {createFolder.isPending ? 'Creating...' : 'New folder'}
@@ -297,20 +351,20 @@ function DriveView() {
             <select
               id="drive-sort"
               defaultValue="name"
-              className="h-9 rounded-lg border border-white/10 bg-[#2f2f2f] px-3 text-xs text-[#d9d9d9] outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
+              className="h-9 rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-xs text-zinc-200 outline-none focus:border-zinc-600 focus:ring-2 focus:ring-zinc-800"
             >
               <option value="name">Name</option>
               <option value="modified">Last modified</option>
               <option value="size">File size</option>
             </select>
             <div
-              className="flex rounded-lg border border-white/10 bg-[#2f2f2f] p-1"
+              className="flex rounded-lg border border-zinc-800 bg-zinc-900 p-1"
               aria-label="View style"
             >
               <button
                 type="button"
                 onClick={() => setView('list')}
-                className={`rounded-md p-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${view === 'list' ? 'bg-[#4a4a4a] text-white' : 'text-[#8e8e8e] hover:text-[#d9d9d9]'}`}
+                className={`rounded-md p-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${view === 'list' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}
                 aria-label="List view"
                 aria-pressed={view === 'list'}
               >
@@ -319,7 +373,7 @@ function DriveView() {
               <button
                 type="button"
                 onClick={() => setView('grid')}
-                className={`rounded-md p-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${view === 'grid' ? 'bg-[#4a4a4a] text-white' : 'text-[#8e8e8e] hover:text-[#d9d9d9]'}`}
+                className={`rounded-md p-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${view === 'grid' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-200'}`}
                 aria-label="Grid view"
                 aria-pressed={view === 'grid'}
               >
@@ -329,21 +383,21 @@ function DriveView() {
           </div>
         </div>
 
-        <div className="border-b border-white/5 bg-[#212121]/50 px-5 py-3">
-          <div className="hidden grid-cols-[minmax(0,1fr)_160px_120px] gap-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#676767] sm:grid">
+        <div className="border-b border-zinc-800 bg-black/50 px-5 py-3">
+          <div className="hidden grid-cols-[minmax(0,1fr)_120px_48px] gap-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-600 sm:grid">
             <span id="drive-browser-title">Name</span>
-            <span>Actions</span>
             <span>Size</span>
+            <span className="text-right">Actions</span>
           </div>
         </div>
 
         {isLoadingFiles ? (
-          <div className="flex min-h-80 items-center justify-center text-sm text-[#8e8e8e]">
+          <div className="flex min-h-80 items-center justify-center text-sm text-zinc-500">
             Loading files...
           </div>
-        ) : filesQuery.isError ? (
+        ) : hasFileQueryError ? (
           <div className="flex min-h-80 flex-col items-center justify-center px-6 text-center">
-            <p className="text-sm text-[#c5c5c5]">Could not load your files.</p>
+            <p className="text-sm text-zinc-300">Could not load your files.</p>
             <button
               type="button"
               className={`${secondaryButton} mt-4`}
@@ -357,7 +411,7 @@ function DriveView() {
             className={
               view === 'grid'
                 ? 'grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3'
-                : 'divide-y divide-white/5'
+                : 'divide-y divide-zinc-800'
             }
           >
             {folders.map((folder) => (
@@ -366,58 +420,108 @@ function DriveView() {
                 folder={folder}
                 view={view}
                 href={`/dashboard/folders/${folder._id}`}
+                canRename={!folder.isShared}
+                sharedBy={folder.sharedBy}
                 isRenaming={
+                  !folder.isShared &&
                   renameFolder.isPending &&
                   renameFolder.variables?._id === folder._id
                 }
                 onRename={handleRenameFolder}
-                actions={<ShareButton item={folder} itemType="folder" />}
+                onOpen={() =>
+                  recordRecent.mutate({
+                    itemId: folder._id,
+                    itemType: 'folder',
+                  })
+                }
+                actions={
+                  <ItemActionsMenu
+                    item={folder}
+                    itemType="folder"
+                    shared={folder.isShared}
+                  />
+                }
               />
             ))}
             {files.map((file) => (
               <article
                 key={file._id}
                 aria-label={`Open ${file.name}`}
+                title={`Double-click to open ${file.name}`}
+                tabIndex={0}
+                onDoubleClick={() => {
+                  recordRecent.mutate({
+                    itemId: file._id,
+                    itemType: 'file',
+                  });
+                  filesApi.openFile(file.url);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.target === event.currentTarget &&
+                    event.key === 'Enter'
+                  )
+                    {
+                      recordRecent.mutate({
+                        itemId: file._id,
+                        itemType: 'file',
+                      });
+                      filesApi.openFile(file.url);
+                    }
+                }}
                 className={
                   view === 'grid'
-                    ? 'cursor-pointer rounded-xl border border-white/5 bg-[#212121] p-4 transition hover:border-white/10 hover:bg-[#2f2f2f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25'
-                    : 'grid cursor-pointer gap-2 px-5 py-4 transition hover:bg-[#2f2f2f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25 sm:grid-cols-[minmax(0,1fr)_160px_120px] sm:items-center sm:gap-4'
+                    ? 'relative cursor-pointer rounded-xl border border-zinc-800 bg-black p-4 transition hover:border-zinc-800 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400'
+                    : 'grid cursor-pointer gap-2 px-5 py-4 transition hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 sm:grid-cols-[minmax(0,1fr)_120px_48px] sm:items-center sm:gap-4'
                 }
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#2f2f2f] text-[#b4b4b4]">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-zinc-400">
                     <FileUp className="size-4" aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-[#ececec]">
+                    <p
+                      className={`truncate text-sm font-medium text-zinc-100 ${view === 'grid' ? 'pr-10' : ''}`}
+                    >
                       {file.name}
                     </p>
-                    {view === 'grid' && (
-                      <p className="mt-1 truncate text-xs text-[#8e8e8e]">
-                        {file.name}
+                    {file.sharedBy ? (
+                      <p className="mt-1 truncate text-xs text-zinc-500">
+                        Shared by {file.sharedBy.name || file.sharedBy.email}
                       </p>
-                    )}
+                    ) : null}
                   </div>
                 </div>
-                <FileActions file={file} />
-                <p className="text-xs text-[#b4b4b4]">
+                <p className="text-xs text-zinc-400">
                   {formatStoredSize(file.size)}
                 </p>
+                <ItemActionsMenu
+                  item={file}
+                  itemType="file"
+                  shared={file.isShared}
+                  className={view === 'grid' ? 'absolute right-3 top-3' : ''}
+                />
               </article>
             ))}
           </div>
         ) : (
           <div className="flex min-h-80 flex-col items-center justify-center px-6 py-14 text-center">
-            <span className="mb-5 flex size-14 items-center justify-center rounded-2xl border border-white/10 bg-[#2f2f2f] text-[#b4b4b4]">
+            <span className="mb-5 flex size-14 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-400">
               <FileUp className="size-6" aria-hidden="true" />
             </span>
-            <h2 className="text-base font-medium text-[#ececec]">
+            <h2 className="text-base font-medium text-zinc-100">
               Your drive is ready
             </h2>
-            <p className="mt-2 max-w-md text-sm leading-6 text-[#8e8e8e]">
+            <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
               Files and folders returned by the backend will appear here.
             </p>
-            <UploadButton parent={activeFolderId} />
+            <div className="mt-5">
+              <UploadButton
+                parent={activeFolderId}
+                destinationName={currentFolder?.name || 'My Drive'}
+                disabled={!canCreateHere || nestingLimitReached}
+              />
+            </div>
           </div>
         )}
       </section>
@@ -440,15 +544,144 @@ function EmptyCollectionView({
       <section
         className={`${panelClass} flex min-h-96 flex-col items-center justify-center px-6 py-14 text-center`}
       >
-        <span className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-[#2f2f2f] text-[#b4b4b4]">
+        <span className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-zinc-900 text-zinc-400">
           <Icon className="size-6" aria-hidden="true" />
         </span>
-        <h2 className="text-base font-medium text-[#ececec]">
+        <h2 className="text-base font-medium text-zinc-100">
           Nothing here yet
         </h2>
-        <p className="mt-2 max-w-md text-sm leading-6 text-[#8e8e8e]">
+        <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
           {description}
         </p>
+      </section>
+    </div>
+  );
+}
+
+function RecentView() {
+  const recent = useGetRecent();
+  const recordRecent = useRecordRecent();
+  const navigate = useNavigate();
+  const items = recent.data || [];
+
+  if (!recent.isLoading && !recent.isError && !items.length)
+    return (
+      <EmptyCollectionView
+        title="Recent"
+        description="Files and folders you open will be collected here for quick access."
+        icon={Clock3}
+      />
+    );
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Recent"
+        description="Items are ordered by when you last opened them."
+      />
+      <section className={panelClass}>
+        {recent.isLoading ? (
+          <p className="p-6 text-sm text-zinc-400">Loading recent items&</p>
+        ) : recent.isError ? (
+          <p className="p-6 text-sm text-zinc-400">
+            Could not load recent items.
+          </p>
+        ) : (
+          <div className="divide-y divide-zinc-800">
+            {items.map((entry) => (
+              <button
+                key={entry._id}
+                type="button"
+                className="flex w-full items-center gap-3 px-5 py-4 text-left transition hover:bg-zinc-900"
+                onClick={() => {
+                  recordRecent.mutate({
+                    itemId: entry.item._id,
+                    itemType: entry.itemType,
+                  });
+                  if (entry.itemType === 'folder')
+                    navigate('/dashboard/folders/' + entry.item._id);
+                  else filesApi.openFile((entry.item as StoredFile).url);
+                }}
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-zinc-400">
+                  {entry.itemType === 'folder' ? (
+                    <Folder className="size-4" aria-hidden="true" />
+                  ) : (
+                    <FileUp className="size-4" aria-hidden="true" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-zinc-100">
+                    {entry.item.name}
+                  </span>
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    Opened {new Date(entry.openedAt).toLocaleString()}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function TrashView() {
+  const trash = useGetTrash();
+  const restore = useRestoreTrashItem();
+  const items = trash.data || [];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Trash"
+        description="Restore deleted files and folders back to your drive."
+      />
+      <section className={panelClass}>
+        {items.length ? (
+          <div className="divide-y divide-zinc-800">
+            {items.map((item) => (
+              <div
+                key={item._id}
+                className="flex items-center gap-3 px-5 py-4"
+              >
+                <Trash2 className="size-4 text-zinc-500" aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-zinc-100">
+                    {item.name}
+                  </p>
+                  <p className="mt-1 text-xs capitalize text-zinc-500">
+                    {item.trashType === 'shared-access'
+                      ? 'Shared access'
+                      : item.itemType}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  disabled={restore.isPending}
+                  onClick={() =>
+                    restore.mutate(item._id, {
+                      onSuccess: () => toast.success('Item restored.'),
+                      onError: () => toast.error('Unable to restore item.'),
+                    })
+                  }
+                >
+                  <RotateCcw className="size-4" aria-hidden="true" />
+                  Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-80 flex-col items-center justify-center px-6 py-14 text-center">
+            <Trash2 className="mb-5 size-6 text-zinc-500" aria-hidden="true" />
+            <h2 className="text-base font-medium text-zinc-100">
+              Trash is empty
+            </h2>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -470,33 +703,33 @@ function StorageView() {
         <div className={`${panelClass} p-5 sm:p-6`}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8e8e8e]">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
                 Personal workspace
               </p>
               <h2 className="mt-2 text-xl font-semibold text-white">
                 0 B of 5 GB used
               </h2>
-              <p className="mt-2 text-sm text-[#8e8e8e]">
+              <p className="mt-2 text-sm text-zinc-500">
                 No active uploads or reserved storage.
               </p>
             </div>
-            <span className="rounded-lg border border-white/15 bg-[#3a3a3a] px-3 py-1.5 text-xs font-medium text-[#ececec]">
+            <span className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-100">
               Free plan
             </span>
           </div>
           <div
-            className="mt-7 h-2.5 overflow-hidden rounded-full bg-[#3a3a3a]"
+            className="mt-7 h-2.5 overflow-hidden rounded-full bg-zinc-800"
             aria-label="0 percent of storage used"
           >
-            <div className="h-full w-0 rounded-full bg-[#d9d9d9]" />
+            <div className="h-full w-0 rounded-full bg-zinc-200" />
           </div>
-          <div className="mt-3 flex justify-between text-xs text-[#8e8e8e]">
+          <div className="mt-3 flex justify-between text-xs text-zinc-500">
             <span>0% used</span>
             <span>5 GB available</span>
           </div>
         </div>
         <div className={`${panelClass} p-5 sm:p-6`}>
-          <h2 className="text-sm font-medium text-[#ececec]">Upload limits</h2>
+          <h2 className="text-sm font-medium text-zinc-100">Upload limits</h2>
           <dl className="mt-5 space-y-4 text-sm">
             {[
               ['Maximum file size', '100 MB'],
@@ -507,25 +740,23 @@ function StorageView() {
                 key={label}
                 className="flex items-center justify-between gap-4"
               >
-                <dt className="text-[#8e8e8e]">{label}</dt>
-                <dd className="font-medium text-[#d9d9d9]">{value}</dd>
+                <dt className="text-zinc-500">{label}</dt>
+                <dd className="font-medium text-zinc-200">{value}</dd>
               </div>
             ))}
           </dl>
         </div>
       </section>
       <section className={`${panelClass} p-5 sm:p-6`}>
-        <h2 className="text-sm font-medium text-[#ececec]">
-          Storage breakdown
-        </h2>
+        <h2 className="text-sm font-medium text-zinc-100">Storage breakdown</h2>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           {['Documents', 'Media', 'Other files'].map((label) => (
             <div
               key={label}
-              className="rounded-xl border border-white/5 bg-[#212121] p-4"
+              className="rounded-xl border border-zinc-800 bg-black p-4"
             >
-              <p className="text-xs text-[#8e8e8e]">{label}</p>
-              <p className="mt-2 text-lg font-medium text-[#d9d9d9]">0 B</p>
+              <p className="text-xs text-zinc-500">{label}</p>
+              <p className="mt-2 text-lg font-medium text-zinc-200">0 B</p>
             </div>
           ))}
         </div>
@@ -572,35 +803,35 @@ function BillingView() {
         {plans.map((plan) => (
           <article
             key={plan.name}
-            className={`${panelClass} flex flex-col p-5 sm:p-6 ${plan.current ? 'ring-1 ring-white/20' : ''}`}
+            className={`${panelClass} flex flex-col p-5 sm:p-6 ${plan.current ? 'ring-1 ring-zinc-400' : ''}`}
           >
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">{plan.name}</h2>
               {plan.current && (
-                <span className="rounded-md bg-[#3a3a3a] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#d9d9d9]">
+                <span className="rounded-md bg-zinc-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-200">
                   Current
                 </span>
               )}
             </div>
             <p className="mt-5 text-3xl font-semibold text-white">
               {plan.price}
-              <span className="text-sm font-normal text-[#8e8e8e]">
+              <span className="text-sm font-normal text-zinc-500">
                 {' '}
                 / month
               </span>
             </p>
-            <dl className="mt-6 space-y-3 border-t border-white/5 pt-5 text-sm">
+            <dl className="mt-6 space-y-3 border-t border-zinc-800 pt-5 text-sm">
               <div className="flex justify-between">
-                <dt className="text-[#8e8e8e]">Storage</dt>
-                <dd className="text-[#d9d9d9]">{plan.storage}</dd>
+                <dt className="text-zinc-500">Storage</dt>
+                <dd className="text-zinc-200">{plan.storage}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-[#8e8e8e]">Per-file limit</dt>
-                <dd className="text-[#d9d9d9]">{plan.fileLimit}</dd>
+                <dt className="text-zinc-500">Per-file limit</dt>
+                <dd className="text-zinc-200">{plan.fileLimit}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-[#8e8e8e]">File preview</dt>
-                <dd className="text-[#d9d9d9]">Included</dd>
+                <dt className="text-zinc-500">File preview</dt>
+                <dd className="text-zinc-200">Included</dd>
               </div>
             </dl>
             <button
@@ -618,7 +849,7 @@ function BillingView() {
           </article>
         ))}
       </section>
-      <p className="text-xs leading-5 text-[#676767]">
+      <p className="text-xs leading-5 text-zinc-600">
         Plan prices and limits are proposed MVP defaults and remain subject to
         product and finance approval.
       </p>
@@ -657,13 +888,13 @@ function OrganizationsView() {
         <div
           className={`${panelClass} flex min-h-80 flex-col items-center justify-center px-6 py-12 text-center`}
         >
-          <span className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-[#2f2f2f] text-[#b4b4b4]">
+          <span className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-zinc-900 text-zinc-400">
             <Building2 className="size-6" aria-hidden="true" />
           </span>
-          <h2 className="text-base font-medium text-[#ececec]">
+          <h2 className="text-base font-medium text-zinc-100">
             No organizations yet
           </h2>
-          <p className="mt-2 max-w-md text-sm leading-6 text-[#8e8e8e]">
+          <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
             Create an organization to get an isolated workspace with its own
             files, storage, billing, and members.
           </p>
@@ -680,14 +911,14 @@ function OrganizationsView() {
         </div>
         <div className={`${panelClass} p-5 sm:p-6`}>
           <div className="flex items-center gap-3">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-[#2f2f2f] text-[#b4b4b4]">
+            <span className="flex size-9 items-center justify-center rounded-xl bg-zinc-900 text-zinc-400">
               <ShieldCheck className="size-4" aria-hidden="true" />
             </span>
             <div>
-              <h2 className="text-sm font-medium text-[#ececec]">
+              <h2 className="text-sm font-medium text-zinc-100">
                 Role boundaries
               </h2>
-              <p className="mt-1 text-xs text-[#8e8e8e]">
+              <p className="mt-1 text-xs text-zinc-500">
                 Access applies only inside the active organization.
               </p>
             </div>
@@ -696,10 +927,10 @@ function OrganizationsView() {
             {roles.map(([role, description]) => (
               <div
                 key={role}
-                className="rounded-xl border border-white/5 bg-[#212121] p-4"
+                className="rounded-xl border border-zinc-800 bg-black p-4"
               >
-                <p className="text-sm font-medium text-[#d9d9d9]">{role}</p>
-                <p className="mt-1 text-xs leading-5 text-[#8e8e8e]">
+                <p className="text-sm font-medium text-zinc-200">{role}</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-500">
                   {description}
                 </p>
               </div>
@@ -720,23 +951,22 @@ function SettingsView() {
       />
       <section className="grid gap-4 lg:grid-cols-2">
         <div className={`${panelClass} p-5 sm:p-6`}>
-          <h2 className="text-sm font-medium text-[#ececec]">
+          <h2 className="text-sm font-medium text-zinc-100">
             Drive preferences
           </h2>
           <div className="mt-5 space-y-4">
             {[
               ['Default view', 'List'],
               ['Upload conflict', 'Ask before replacing'],
-              ['Trash retention', '30 days'],
             ].map(([label, value]) => (
               <div
                 key={label}
-                className="flex items-center justify-between gap-4 border-b border-white/5 pb-4 last:border-0 last:pb-0"
+                className="flex items-center justify-between gap-4 border-b border-zinc-800 pb-4 last:border-0 last:pb-0"
               >
-                <span className="text-sm text-[#8e8e8e]">{label}</span>
+                <span className="text-sm text-zinc-500">{label}</span>
                 <button
                   type="button"
-                  className="rounded-lg bg-[#3a3a3a] px-3 py-2 text-xs text-[#d9d9d9] hover:bg-[#4a4a4a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+                  className="rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
                 >
                   {value}
                 </button>
@@ -745,8 +975,8 @@ function SettingsView() {
           </div>
         </div>
         <div className={`${panelClass} p-5 sm:p-6`}>
-          <h2 className="text-sm font-medium text-[#ececec]">Security</h2>
-          <p className="mt-2 text-sm leading-6 text-[#8e8e8e]">
+          <h2 className="text-sm font-medium text-zinc-100">Security</h2>
+          <p className="mt-2 text-sm leading-6 text-zinc-500">
             Authentication and session controls protect every personal or
             organization workspace.
           </p>
@@ -796,13 +1026,13 @@ function HelpView() {
                 `${title} documentation will be added to the help center.`,
               )
             }
-            className="rounded-2xl border border-white/10 bg-[#212121] p-5 text-left transition hover:border-white/15 hover:bg-[#2f2f2f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+            className="rounded-2xl border border-zinc-800 bg-black p-5 text-left transition hover:border-zinc-700 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
           >
-            <CircleHelp className="size-5 text-[#b4b4b4]" aria-hidden="true" />
-            <span className="mt-5 block text-sm font-medium text-[#ececec]">
+            <CircleHelp className="size-5 text-zinc-400" aria-hidden="true" />
+            <span className="mt-5 block text-sm font-medium text-zinc-100">
               {title}
             </span>
-            <span className="mt-2 block text-xs leading-5 text-[#8e8e8e]">
+            <span className="mt-2 block text-xs leading-5 text-zinc-500">
               {description}
             </span>
           </button>
@@ -815,23 +1045,20 @@ function HelpView() {
 export function DashboardSection({ section }: { section: string }) {
   switch (section) {
     case 'shared':
-      return <SharedView />;
+      return (
+        <SharedView
+          header={
+            <PageHeader
+              title="Shared with me"
+              description="Files and folders shared with your account."
+            />
+          }
+        />
+      );
     case 'recent':
-      return (
-        <EmptyCollectionView
-          title="Recent"
-          description="Files and folders you open will be collected here for quick access."
-          icon={Clock3}
-        />
-      );
+      return <RecentView />;
     case 'trash':
-      return (
-        <EmptyCollectionView
-          title="Trash"
-          description="Deleted items will stay here for 30 days before permanent removal."
-          icon={Trash2}
-        />
-      );
+      return <TrashView />;
     case 'storage':
       return <StorageView />;
     case 'billing':
