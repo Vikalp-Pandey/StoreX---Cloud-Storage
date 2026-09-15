@@ -46,6 +46,7 @@ const env = createEnv({
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
     AWS_SESSION_TOKEN: z.string().optional(),
     BUCKET_NAME: z.string(),
+    SQS_EMAIL_QUEUE_URL: z.string().url(),
 
     GITHUB_CLIENT_ID: z.string(),
     GITHUB_CLIENT_SECRET: z.string(),
