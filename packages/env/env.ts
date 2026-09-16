@@ -55,6 +55,12 @@ const env = createEnv({
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
     GOOGLE_REDIRECT_URI: z.string(),
+
+    STRIPE_SECRET_KEY: z.string().startsWith('sk_').optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
+    STRIPE_PRO_PRICE_ID: z.string().startsWith('price_').optional(),
+    STRIPE_ULTRA_PRICE_ID: z.string().startsWith('price_').optional(),
+    APP_URL: z.url().optional(),
   },
 
   runtimeEnv: process.env,
