@@ -6,6 +6,7 @@ import { logger } from '@packages/httputils';
 import authRoutes from '@/routes/authRoutes/auth.routes';
 import oauthRoutes from '@/routes/authRoutes/oauth.routes';
 import fileRoutes from '@/routes/fileRoutes/file.routes';
+import multipartUploadRoutes from '@/routes/fileRoutes/multipartupload.routes';
 import { errorHandler } from '@/middlewares/error.middleware';
 import env from '@packages/env';
 
@@ -29,6 +30,7 @@ app.get('/', (c) => {
 app.route('/api/auth', authRoutes);
 app.route('/api/auth', oauthRoutes);
 app.route('/api/files', fileRoutes);
+app.route('/api/upload', multipartUploadRoutes);
 
 connectToMongoDb(env!.DATABASE_URL);
 

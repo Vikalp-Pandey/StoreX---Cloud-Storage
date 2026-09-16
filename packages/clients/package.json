@@ -1,0 +1,12 @@
+{
+  "name": "@packages/clients",
+  "version": "1.0.0",
+  "private": true,
+  "exports": {
+    "./s3": "./s3.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1123.0",
+    "@packages/env": "workspace:*"
+  }
+}
