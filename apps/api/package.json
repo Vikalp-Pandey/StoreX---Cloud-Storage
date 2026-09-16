@@ -16,6 +16,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1123.0",
     "@hono/node-server": "^1.13.0",
     "@openfga/sdk": "^0.9.7",
+    "@packages/clients": "workspace:*",
     "@packages/env": "workspace:*",
     "@services/emailservices": "workspace:*",
     "axios": "^1.13.6",
@@ -24,6 +25,7 @@
     "hono": "^4.7.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.2.4",
+    "multipartuploadservices": "workspace:*",
     "nodemailer": "^8.0.1",
     "react": "^19.2.4",
     "zod": "^4.3.6"

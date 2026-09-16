@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react",
+    "module": "commonjs",
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@services/multipartUploadServices": ["./src/*"]
+    }
+  },
+  "include": [
+    "src",
+    "../../services/multipartUploadServices"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

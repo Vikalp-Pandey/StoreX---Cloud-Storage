@@ -1,5 +1,13 @@
 import axios from 'axios';
 import { api } from '@/lib/axios';
+import {
+  abortUploadApi,
+  completeUploadApi,
+  getPresignedPartUrlApi,
+  startUploadApi,
+  uploadPartToS3,
+  type PartETag,
+} from '@/api/multipart-upload.api';
 
 export interface StoredFile {
   _id: string;
@@ -79,6 +87,66 @@ export interface CreateFolderInput {
 export interface RenameFolderInput {
   _id: string;
   name: string;
+}
+
+const MEBIBYTE = 1024 ** 2;
+const MAX_SINGLE_UPLOAD_BYTES = 5 * 1024 ** 3;
+const MULTIPART_PART_BYTES = 64 * MEBIBYTE;
+const MAX_MULTIPART_PARTS = 10_000;
+
+async function uploadMultipartFile(
+  file: File,
+  onProgress?: (percent: number) => void,
+) {
+  const { uploadId, key } = await startUploadApi(
+    file.name,
+    file.type || 'application/octet-stream',
+  );
+  if (!uploadId || !key) {
+    throw new Error('Failed to initialize multipart upload.');
+  }
+
+  const partSize = Math.max(
+    MULTIPART_PART_BYTES,
+    Math.ceil(file.size / MAX_MULTIPART_PARTS / MEBIBYTE) * MEBIBYTE,
+  );
+  const parts: PartETag[] = [];
+  let uploadedBytes = 0;
+
+  try {
+    for (let start = 0; start < file.size; start += partSize) {
+      const partNumber = parts.length + 1;
+      const chunk = file.slice(start, Math.min(start + partSize, file.size));
+      const presignedUrl = await getPresignedPartUrlApi(
+        key,
+        uploadId,
+        partNumber,
+      );
+      const etag = await uploadPartToS3(presignedUrl, chunk, (partBytes) => {
+        const percent = Math.round(
+          ((uploadedBytes + Math.min(partBytes, chunk.size)) / file.size) * 100,
+        );
+        onProgress?.(Math.min(percent, 99));
+      });
+      if (!etag) {
+        throw new Error('S3 did not return an ETag for an uploaded part.');
+      }
+      parts.push({ ETag: etag, PartNumber: partNumber });
+      uploadedBytes += chunk.size;
+    }
+
+    await completeUploadApi(key, uploadId, parts);
+  } catch (error) {
+    try {
+      await abortUploadApi(key, uploadId);
+    } catch {
+      // Preserve the original upload failure.
+    }
+    throw error;
+  }
+
+  onProgress?.(100);
+  return key;
 }
 
 export const filesApi = {
@@ -176,23 +244,32 @@ export const filesApi = {
     parent?: string;
     onProgress?: (percent: number) => void;
   }) => {
-    const response = await api.post<
-      ApiResponse<{ fileUrl: string; uploadUrl: string; key: string }>
-    >('/files/file-upload', {
-      fileName: file.name,
-      fileType: file.type,
-      parentFolder: parent,
-    });
-    const { uploadUrl, key } = response.data.data;
-    await axios.put(uploadUrl, file, {
-      headers: { 'Content-Type': file.type },
-      onUploadProgress: (event) =>
-        onProgress?.(Math.round((event.loaded * 100) / (event.total || 1))),
-    });
+    let key: string;
+    const contentType = file.type || 'application/octet-stream';
+
+    if (file.size > MAX_SINGLE_UPLOAD_BYTES) {
+      key = await uploadMultipartFile(file, onProgress);
+    } else {
+      const response = await api.post<
+        ApiResponse<{ fileUrl: string; uploadUrl: string; key: string }>
+      >('/files/file-upload', {
+        fileName: file.name,
+        fileType: contentType,
+        parentFolder: parent,
+      });
+      const { uploadUrl, key: singleUploadKey } = response.data.data;
+      await axios.put(uploadUrl, file, {
+        headers: { 'Content-Type': contentType },
+        onUploadProgress: (event) =>
+          onProgress?.(Math.round((event.loaded * 100) / (event.total || 1))),
+      });
+      key = singleUploadKey;
+    }
+
     return filesApi.createFile({
       itemName: file.name,
       size: file.size,
-      mimeType: file.type,
+      mimeType: contentType,
       key,
       parentFolder: parent,
     });

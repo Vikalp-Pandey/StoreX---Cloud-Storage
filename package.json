@@ -15,7 +15,8 @@
     "add:env": "pnpm --filter env add",
     "add:ui": "pnpm --filter ui add",
     "add:email": "pnpm --filter emailservices add",
-    "add:fileupload": "pnpm --filter fileupload add"
+    "add:fileupload": "pnpm --filter fileupload add",
+    "add:multipartupload": "pnpm --filter multipartuploadservices add"
   },
   "keywords": [],
   "author": "",
