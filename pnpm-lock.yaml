@@ -77,6 +77,9 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.3.6
+      stripe:
+        specifier: ^22.6.2
+        version: 22.6.2(@types/node@25.3.5)
     devDependencies:
       '@packages/httputils':
         specifier: workspace:*
@@ -238,6 +241,9 @@ importers:
       '@t3-oss/env-core':
         specifier: ^0.13.11
         version: 0.13.11(typescript@5.9.3)(zod@4.3.6)
+      stripe:
+        specifier: ^22.6.2
+        version: 22.6.2(@types/node@26.6.0)
       dotenv:
         specifier: ^16.6.1
         version: 16.6.1
@@ -2298,6 +2304,9 @@ packages:
     resolution: {integrity: sha512-LtXRihc5ytjJIQEH+xqjB0+YgsV4/tW35XKX3GTZHpWtcC8SPkT/d4tqdf1cKtesryHm2bgp6l555NYcT2NLvA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
     peerDependencies:
+  '@types/node@26.6.0':
+    resolution: {integrity: sha512-FWWQhDlKSnEJVe+CTJCQL8Fol7s1MKo3Ud0fjryxoOoH+hwMIPxol0MguYrLi2I0VvIFwOU2DwdWET2+px15qg==}
+
       typescript: '>=4.8.4 <6.0.0'
 
   '@typescript-eslint/type-utils@8.57.0':
@@ -4368,6 +4377,15 @@ packages:
   tr46@5.1.1:
     resolution: {integrity: sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==}
     engines: {node: '>=18'}
+  stripe@22.6.2:
+    resolution: {integrity: sha512-PwRE2scocvXqDKPiskMa5vRJEAEkq46W69XyUYmAwrNSLr675lQnfqLwnsndAWizwgihOWw/irLmoFRo3ez7ew==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
 
   ts-api-utils@2.4.0:
     resolution: {integrity: sha512-3TaVTaAv2gTiMB35i3FiGJaRfwb3Pyn/j3m/bfAvGe8FB7CF6u+LMYqYlDh7reQf7UNvoTvdfAqHGmPGOSsPmA==}
@@ -4535,6 +4553,9 @@ packages:
     engines: {node: ^20.17.0 || >=22.9.0}
 
   vary@1.1.2:
+  undici-types@8.9.0:
+    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
+
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
 
@@ -6778,6 +6799,10 @@ snapshots:
 
   '@typescript-eslint/types@8.57.0': {}
 
+  '@types/node@26.6.0':
+    dependencies:
+      undici-types: 8.9.0
+
   '@typescript-eslint/typescript-estree@8.57.0(typescript@5.9.3)':
     dependencies:
       '@typescript-eslint/project-service': 8.57.0(typescript@5.9.3)
@@ -8922,6 +8947,14 @@ snapshots:
     optional: true
 
   turbo-darwin-arm64@2.8.14:
+  stripe@22.6.2(@types/node@25.3.5):
+    optionalDependencies:
+      '@types/node': 25.3.5
+
+  stripe@22.6.2(@types/node@26.6.0):
+    optionalDependencies:
+      '@types/node': 26.6.0
+
     optional: true
 
   turbo-linux-64@2.8.14:
@@ -9074,6 +9107,8 @@ snapshots:
       strip-ansi: 6.0.1
 
   wrappy@1.0.2: {}
+
+  undici-types@8.9.0: {}
 
   ws@8.18.3: {}
 

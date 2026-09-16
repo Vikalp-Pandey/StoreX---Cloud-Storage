@@ -1,7 +1,9 @@
 import { UploadButton, ItemActionsMenu, SharedView } from './file-features';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { useQueryClient } from '@tanstack/react-query';
+import { useBillingPortal, useBillingStatus, useCheckout } from '@/hooks/useBilling';
 import {
   Building2,
   ChevronRight,
@@ -766,97 +768,110 @@ function StorageView() {
 }
 
 const plans = [
-  {
-    name: 'Free',
-    price: '$0',
-    storage: '5 GB',
-    fileLimit: '100 MB',
-    current: true,
-  },
-  {
-    name: 'Pro',
-    price: '$9',
-    storage: '100 GB',
-    fileLimit: '2 GB',
-    current: false,
-  },
-  {
-    name: 'Ultra',
-    price: '$25',
-    storage: '1 TB',
-    fileLimit: '10 GB',
-    current: false,
-  },
-];
+  { id: 'free', name: 'Free', price: '$0', storage: '5 GB' },
+  { id: 'pro', name: 'Pro', price: '$9', storage: '100 GB' },
+  { id: 'ultra', name: 'Ultra', price: '$25', storage: '1 TB' },
+] as const;
 
 function BillingView() {
+  const location = useLocation();
+  const queryClient = useQueryClient();
+  const billingQuery = useBillingStatus(location.search.includes('checkout=success'));
+  const checkout = useCheckout();
+  const portal = useBillingPortal();
+  const currentPlan = billingQuery.data?.plan ?? 'free';
+  const hasSubscription = billingQuery.data?.subscription?.hasSubscription ?? false;
+  const working = checkout.isPending || portal.isPending;
+
+  useEffect(() => {
+    if (billingQuery.data) {
+      void queryClient.invalidateQueries({ queryKey: ['files', 'storage'] });
+    }
+  }, [billingQuery.data, queryClient]);
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Billing"
-        description="Manage your plan, invoices, and payment preferences."
+        description="Manage your plan and payment preferences."
       />
-      <section
-        className="grid gap-4 lg:grid-cols-3"
-        aria-label="Available plans"
-      >
-        {plans.map((plan) => (
-          <article
-            key={plan.name}
-            className={`${panelClass} flex flex-col p-5 sm:p-6 ${plan.current ? 'ring-1 ring-zinc-400' : ''}`}
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">{plan.name}</h2>
-              {plan.current && (
-                <span className="rounded-md bg-zinc-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-200">
-                  Current
-                </span>
-              )}
-            </div>
-            <p className="mt-5 text-3xl font-semibold text-white">
-              {plan.price}
-              <span className="text-sm font-normal text-zinc-500">
-                {' '}
-                / month
-              </span>
-            </p>
-            <dl className="mt-6 space-y-3 border-t border-zinc-800 pt-5 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Storage</dt>
-                <dd className="text-zinc-200">{plan.storage}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Per-file limit</dt>
-                <dd className="text-zinc-200">{plan.fileLimit}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">File preview</dt>
-                <dd className="text-zinc-200">Included</dd>
-              </div>
-            </dl>
-            <button
-              type="button"
-              disabled={plan.current}
-              onClick={() =>
-                toast.info(
-                  `${plan.name} checkout will be enabled with Stripe billing.`,
-                )
-              }
-              className={`${plan.current ? secondaryButton : primaryButton} mt-6 w-full`}
+      {location.search.includes('checkout=success') && currentPlan === 'free' && (
+        <p className="text-sm text-zinc-300">
+          Payment submitted. Waiting for Stripe to confirm your subscription.
+        </p>
+      )}
+      {location.search.includes('checkout=cancel') && (
+        <p className="text-sm text-zinc-300">Checkout was canceled. Your plan is unchanged.</p>
+      )}
+      {billingQuery.data && !billingQuery.data.billingReady && (
+        <p className="text-sm text-amber-300">Configure the Stripe webhook signing secret to enable Checkout.</p>
+      )}
+      {billingQuery.isError && (
+        <p className="text-sm text-red-300">Billing status is unavailable. Please reload.</p>
+      )}
+      {hasSubscription && (
+        <button
+          type="button"
+          disabled={working}
+          onClick={() => portal.mutate(undefined, {
+            onSuccess: (url) => window.location.assign(url),
+            onError: () => toast.error('Could not open the billing portal.'),
+          })}
+          className={secondaryButton}
+        >
+          Manage subscription
+        </button>
+      )}
+      <section className="grid gap-4 lg:grid-cols-3" aria-label="Available plans">
+        {plans.map((plan) => {
+          const current = plan.id === currentPlan;
+          return (
+            <article
+              key={plan.id}
+              className={panelClass + ' flex flex-col p-5 sm:p-6' +
+                (current ? ' ring-1 ring-zinc-400' : '')}
             >
-              {plan.current ? 'Current plan' : `Choose ${plan.name}`}
-            </button>
-          </article>
-        ))}
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">{plan.name}</h2>
+                {current && (
+                  <span className="rounded-md bg-zinc-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-200">
+                    Current
+                  </span>
+                )}
+              </div>
+              <p className="mt-5 text-3xl font-semibold text-white">
+                {plan.price}
+                <span className="text-sm font-normal text-zinc-500"> / month</span>
+              </p>
+              <p className="mt-5 text-sm text-zinc-300">{plan.storage} total storage</p>
+              <button
+                type="button"
+                disabled={working || billingQuery.isPending || billingQuery.isError ||
+                  !billingQuery.data?.billingReady ||
+                  current || plan.id === 'free' || hasSubscription}
+                onClick={() => {
+                  if (plan.id === 'pro' || plan.id === 'ultra') {
+                    checkout.mutate(plan.id, {
+                      onSuccess: (url) => window.location.assign(url),
+                      onError: () => toast.error('Could not start Stripe Checkout.'),
+                    });
+                  }
+                }}
+                className={(current ? secondaryButton : primaryButton) + ' mt-6 w-full'}
+              >
+                {current ? 'Current plan' :
+                  hasSubscription ? 'Manage in billing portal' : 'Choose ' + plan.name}
+              </button>
+            </article>
+          );
+        })}
       </section>
-      <p className="text-xs leading-5 text-zinc-600">
-        Plan prices and limits are proposed MVP defaults and remain subject to
-        product and finance approval.
+      <p className="text-xs text-zinc-500">
+        Checkout is completed on Stripe. Storage changes after its signed webhook confirms payment.
       </p>
     </div>
   );
 }
-
 function OrganizationsView() {
   const roles = [
     ['Admin', 'Manage members, settings, and all workspace content.'],
