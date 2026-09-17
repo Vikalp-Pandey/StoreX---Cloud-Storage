@@ -8,7 +8,6 @@ import VerifyOTPPage from './pages/verify-otp';
 import ResetPasswordPage from './pages/reset-password';
 import ForgotPasswordPage from './pages/forgot-password';
 import Navbar from './components/navbar';
-import AboutPage from './pages/about';
 
 function AppRoutes() {
   const location = useLocation();
@@ -25,7 +24,6 @@ function AppRoutes() {
     <>
       {!isDashboardRoute && !isAuthRoute && <Navbar />}
       <Routes>
-        <Route path="/" element={<AboutPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/verify-otp" element={<VerifyOTPPage />} />

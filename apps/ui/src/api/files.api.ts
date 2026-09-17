@@ -37,6 +37,14 @@ export interface StoredFolder {
 
 export type StoredItems = [StoredFile[], StoredFolder[]];
 
+export interface StorageUsage {
+  plan: 'free' | 'pro' | 'ultra';
+  usedBytes: number;
+  limit: string;
+  limitBytes: number;
+  breakdown: { documents: number; media: number; other: number };
+}
+
 export interface PaginatedItems {
   files: StoredFile[];
   folders: StoredFolder[];
@@ -150,6 +158,11 @@ async function uploadMultipartFile(
 }
 
 export const filesApi = {
+  getStorage: async () => {
+    const response = await api.get<ApiResponse<StorageUsage>>('/files/storage');
+    return response.data.data;
+  },
+
   getAllItems: async () => {
     const response =
       await api.get<ApiResponse<StoredItems>>('/files/getAllItems');
@@ -244,6 +257,11 @@ export const filesApi = {
     parent?: string;
     onProgress?: (percent: number) => void;
   }) => {
+    const storage = await filesApi.getStorage();
+    if (file.size > Math.max(0, storage.limitBytes - storage.usedBytes)) {
+      throw new Error('Not enough storage space for this file.');
+    }
+
     let key: string;
     const contentType = file.type || 'application/octet-stream';
 
@@ -349,6 +367,10 @@ export const filesApi = {
         ? { fileId: input.itemId }
         : { folderId: input.itemId }),
     });
+    return response.data;
+  },
+  inviteUser: async (email: string, itemName: string) => {
+    const response = await api.post('/files/invite', { email, itemName });
     return response.data;
   },
 };

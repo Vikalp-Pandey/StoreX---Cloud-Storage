@@ -408,14 +408,15 @@ function ShareDialog({
   const [email, setEmail] = useState('');
   const [search, setSearch] = useState('');
   const [permissions, setPermissions] = useState<Permission[]>(['read']);
+  const normalizedEmail = email.trim().toLowerCase();
   const queryClient = useQueryClient();
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
   useEffect(() => {
-    const timer = window.setTimeout(() => setSearch(email.trim()), 300);
+    const timer = window.setTimeout(() => setSearch(normalizedEmail), 300);
     return () => window.clearTimeout(timer);
-  }, [email]);
+  }, [normalizedEmail]);
   const users = useQuery({
     queryKey: ['files', 'search-users', search],
     queryFn: () => filesApi.searchUsers(search),
@@ -425,13 +426,36 @@ function ShareDialog({
     queryKey: ['files', 'shares', item._id, itemType],
     queryFn: () => filesApi.sharesForItem(item._id, itemType),
   });
+  const selectedUser = users.data?.find(
+    (user) => user.email.toLowerCase() === normalizedEmail,
+  );
+  const validEmail = /^\S+@\S+\.\S+$/.test(normalizedEmail);
+  const searchFinished =
+    validEmail &&
+    search === normalizedEmail &&
+    users.isSuccess &&
+    !users.isFetching;
+  const shouldInvite = searchFinished && !selectedUser;
   const share = useMutation({
     mutationFn: () =>
-      filesApi.shareItems({ itemId: item._id, itemType, email, permissions }),
+      filesApi.shareItems({
+        itemId: item._id,
+        itemType,
+        email: normalizedEmail,
+        permissions,
+      }),
     onSuccess: () => {
       toast.success('Item shared successfully.');
       setEmail('');
       queryClient.invalidateQueries({ queryKey: ['files'] });
+    },
+    onError: (error) => toast.error(message(error)),
+  });
+  const invite = useMutation({
+    mutationFn: () => filesApi.inviteUser(normalizedEmail, item.name),
+    onSuccess: () => {
+      toast.success(`Invite email sent to ${normalizedEmail}.`);
+      setEmail('');
     },
     onError: (error) => toast.error(message(error)),
   });
@@ -467,7 +491,8 @@ function ShareDialog({
         className="mt-5 space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          share.mutate();
+          if (selectedUser) share.mutate();
+          else if (shouldInvite) invite.mutate();
         }}
       >
         <label className="block text-sm">
@@ -519,19 +544,32 @@ function ShareDialog({
           })}
         </fieldset>
         <p className="text-xs text-zinc-400">
-          Share with an existing StoreX account. Folder permissions are
-          inherited by existing and future descendants through OpenFGA.
+          {shouldInvite
+            ? `${normalizedEmail} does not have a StoreX account. Send an invite, then share access after they sign up.`
+            : 'Share with an existing StoreX account. Folder permissions are inherited by existing and future descendants through OpenFGA.'}
         </p>
         <button
           className={primaryButton}
-          disabled={share.isPending || !permissions.length}
+          disabled={
+            share.isPending ||
+            invite.isPending ||
+            users.isFetching ||
+            !searchFinished ||
+            (!shouldInvite && !permissions.length)
+          }
         >
-          {share.isPending ? (
+          {share.isPending || invite.isPending ? (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           ) : (
             <Send className="size-4" aria-hidden="true" />
           )}
-          {share.isPending ? 'Sharing…' : 'Share'}
+          {invite.isPending
+            ? 'Sending invite…'
+            : share.isPending
+              ? 'Sharing…'
+              : shouldInvite
+                ? 'Invite a friend'
+                : 'Share'}
         </button>
       </form>
       <h3 className="mt-6 flex items-center gap-2 font-medium">
@@ -631,7 +669,10 @@ export function SharedView({ header }: { header?: ReactNode }) {
         <p>Could not load shared items.</p>
       ) : !entries.length ? (
         <section
-          className={panelClass + ' flex min-h-96 flex-col items-center justify-center px-6 py-14 text-center'}
+          className={
+            panelClass +
+            ' flex min-h-96 flex-col items-center justify-center px-6 py-14 text-center'
+          }
         >
           <span className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-zinc-900 text-zinc-400">
             <Users className="size-6" aria-hidden="true" />

@@ -20,6 +20,12 @@ import {
 } from 'lucide-react';
 import { useLogout } from '@/hooks/useAuth';
 import { filesApi, type StoredFile } from '@/api/files.api';
+import { useGetStorage } from '@/hooks/useFiles';
+import {
+  formatStorageBytes,
+  formatStoragePercent,
+  storageUsedPercent,
+} from '@/lib/storage';
 import {
   isNavigationItemActive,
   navigationGroups,
@@ -95,6 +101,12 @@ function SidebarContent({
   collapsed?: boolean;
 }) {
   const logout = useLogout();
+  const storageQuery = useGetStorage();
+  const storage = storageQuery.data;
+  const percent = storageUsedPercent(
+    storage?.usedBytes ?? 0,
+    storage?.limitBytes ?? 0,
+  );
 
   return (
     <div className="flex h-full flex-col bg-black">
@@ -191,14 +203,27 @@ function SidebarContent({
           >
             <div className="mb-2 flex items-center justify-between text-xs">
               <span className="font-medium text-zinc-200">Storage</span>
-              <span className="text-zinc-400">0 B of 5 GB</span>
+              <span className="text-zinc-400">
+                {storage
+                  ? formatStorageBytes(storage.usedBytes) +
+                    ' of ' +
+                    storage.limit
+                  : storageQuery.isPending
+                    ? 'Loading...'
+                    : 'Storage unavailable'}
+              </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
-              <div className="h-full w-0 rounded-full bg-zinc-500" />
+              <div
+                className="h-full rounded-full bg-zinc-500"
+                style={{ width: Math.min(percent, 100) + '%' }}
+              />
             </div>
             <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500">
-              <span>Free plan</span>
-              <span>0% used</span>
+              <span>{(storage?.plan ?? 'free').toUpperCase()} plan</span>
+              <span>
+                {storage ? formatStoragePercent(percent) + ' used' : ''}
+              </span>
             </div>
           </Link>
         )}
@@ -445,16 +470,25 @@ export function DashboardTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
                         onClick={() => openResult(result)}
                         className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-zinc-200 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400"
                       >
-                        <Icon className="size-4 text-zinc-500" aria-hidden="true" />
-                        <span className="min-w-0 flex-1 truncate">{result.item.name}</span>
-                        <span className="text-xs capitalize text-zinc-600">{result.itemType}</span>
+                        <Icon
+                          className="size-4 text-zinc-500"
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          {result.item.name}
+                        </span>
+                        <span className="text-xs capitalize text-zinc-600">
+                          {result.itemType}
+                        </span>
                       </button>
                     </li>
                   );
                 })}
               </ul>
             ) : (
-              <p className="px-4 py-5 text-sm text-zinc-500">No matching items.</p>
+              <p className="px-4 py-5 text-sm text-zinc-500">
+                No matching items.
+              </p>
             )}
           </div>
         )}

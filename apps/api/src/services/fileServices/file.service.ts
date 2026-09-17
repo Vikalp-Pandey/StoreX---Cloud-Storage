@@ -1,7 +1,7 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import env from '@packages/env';
-import S3 from '@/clients/s3';
+import S3 from '@packages/clients/s3';
 
 export function generatePublicFileUrl(key: string) {
   const encodedKey = key.split('/').map(encodeURIComponent).join('/');

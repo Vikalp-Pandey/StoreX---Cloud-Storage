@@ -1,0 +1,11 @@
+{
+  "name": "@services/cacheservices",
+  "version": "1.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/cache.service.ts"
+  },
+  "dependencies": {
+    "@packages/clients": "workspace:*"
+  }
+}

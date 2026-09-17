@@ -8,59 +8,61 @@ dotenv.config({ path: '../../packages/env/.env.local', quiet: true });
 const env = createEnv({
   server: {
     NODE_ENV: z
-      .enum(['development', 'staging', 'production'])
+      .enum(['development', 'staging', 'production', 'test'])
       .default('development'),
-
-    VITE_BASE_BACKEND_URL: z.string(),
 
     ALLOWED_ORIGINS: z
       .string()
-      .transform((val) => val.split(',').map((origin) => origin.trim())),
+      .transform((value) => value.split(',').map((origin) => origin.trim())),
 
     DATABASE_URL: z.string(),
+    REDIS_URL: z.string().url(),
 
     PORT: z
       .string()
       .default('5000')
-      .transform((val) => parseInt(val, 10)),
+      .transform((value) => Number.parseInt(value, 10)),
 
-    ACCESS_SECRET: z.string(),
-    ACCESS_SECRET_TTL: z.string(),
-    ACCESS_SECRET_TTL_S: z.string(),
+    ACCESS_SECRET: z.string().min(32),
+    ACCESS_SECRET_TTL: z.string().default('1d'),
+    ACCESS_SECRET_TTL_S: z.string().default('86400'),
 
     SMTP_NAME: z.string(),
-    SMTP_MAIL: z.string(),
-    SMTP_REPLY_TO: z.string(),
+    SMTP_MAIL: z.string().email(),
+    SMTP_REPLY_TO: z.string().email(),
     SMTP_HOST: z.string(),
     SMTP_PORT: z
       .string()
       .default('587')
-      .transform((val) => parseInt(val, 10)),
+      .transform((value) => Number.parseInt(value, 10)),
     SMTP_USERNAME: z.string(),
     SMTP_PASSWORD: z.string(),
 
-    AWS_REGION: z.string(),
-    // Optional here so deployed environments can use an IAM role. The AWS SDK
-    // still reads these standard variables automatically for local development.
-    AWS_ACCESS_KEY_ID: z.string().optional(),
-    AWS_SECRET_ACCESS_KEY: z.string().optional(),
-    AWS_SESSION_TOKEN: z.string().optional(),
+    AWS_REGION: z.string().default('eu-north-1'),
     BUCKET_NAME: z.string(),
     SQS_EMAIL_QUEUE_URL: z.string().url(),
 
     GITHUB_CLIENT_ID: z.string(),
     GITHUB_CLIENT_SECRET: z.string(),
-    GITHUB_REDIRECT_URI: z.string(),
+    GITHUB_REDIRECT_URI: z.string().url(),
 
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
-    GOOGLE_REDIRECT_URI: z.string(),
+    GOOGLE_REDIRECT_URI: z.string().url(),
 
-    STRIPE_SECRET_KEY: z.string().startsWith('sk_').optional(),
-    STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
-    STRIPE_PRO_PRICE_ID: z.string().startsWith('price_').optional(),
-    STRIPE_ULTRA_PRICE_ID: z.string().startsWith('price_').optional(),
-    APP_URL: z.url().optional(),
+    FGA_API_URL: z.string().url(),
+    FGA_STORE_ID: z.string(),
+    FGA_MODEL_ID: z.string(),
+    FGA_API_TOKEN_ISSUER: z.string().url(),
+    FGA_API_AUDIENCE: z.string(),
+    FGA_CLIENT_ID: z.string(),
+    FGA_CLIENT_SECRET: z.string(),
+
+    STRIPE_SECRET_KEY: z.string().startsWith('sk_'),
+    STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_'),
+    STRIPE_PRO_PRICE_ID: z.string().startsWith('price_'),
+    STRIPE_ULTRA_PRICE_ID: z.string().startsWith('price_'),
+    APP_URL: z.string().url(),
   },
 
   runtimeEnv: process.env,

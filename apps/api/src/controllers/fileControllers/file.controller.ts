@@ -16,8 +16,48 @@ import {
 import { DirectShare } from '@/models/fileModels/directShare.model';
 import { Trash } from '@/models/fileModels/trash.model';
 import { Recent } from '@/models/fileModels/recent.model';
+import {
+  reserveStorageForFile,
+  releaseStorageForFile,
+  getStorageForUser,
+} from '@/services/fileServices/storage.service';
+import {
+  cacheItems,
+  getCachedItems,
+  invalidateItems,
+} from '@services/cacheservices';
 
 export const MAX_NESTING_DEPTH = 20;
+const ITEMS_CACHE_TTL_SECONDS = 60;
+
+type ItemsResponse = {
+  files: unknown[];
+  folders: unknown[];
+  page: number;
+};
+
+const allItemsCacheKey = (userId: string) => `storex:items:${userId}:all`;
+
+const locationCachePrefix = (userId: string, parentFolder?: unknown) =>
+  parentFolder
+    ? `storex:items:folder:${String(parentFolder)}:${userId}`
+    : `storex:items:drive:${userId}`;
+
+const itemsCacheKey = (
+  userId: string,
+  parentFolder: unknown,
+  page: number,
+  limit: number,
+) => `${locationCachePrefix(userId, parentFolder)}:${page}:${limit}`;
+
+async function invalidateItemCaches(userId: string, parentFolder?: unknown) {
+  await invalidateItems(
+    allItemsCacheKey(userId),
+    parentFolder
+      ? `storex:items:folder:${String(parentFolder)}:*`
+      : `${locationCachePrefix(userId)}:*`,
+  );
+}
 
 async function getFolderDepth(folderId: unknown) {
   if (typeof folderId !== 'string' || !isValidObjectId(folderId)) return null;
@@ -64,11 +104,17 @@ async function validateChildLocation(c: Context, parentFolder: unknown) {
 }
 
 export const getAllItems = async (c: Context) => {
-  const user = c.get('user');
+  const userId = String(c.get('user')._id);
+  const cacheKey = allItemsCacheKey(userId);
+  const cached = await getCachedItems<unknown[][]>(cacheKey);
+  if (cached)
+    return sendResponse(c, 200, 'Items fetched successfully!', cached);
+
   const items = await Promise.all([
-    File.find({ user: user._id }),
-    Folder.find({ user: user._id }),
+    File.find({ user: userId }).lean(),
+    Folder.find({ user: userId }).lean(),
   ]);
+  await cacheItems(cacheKey, items, ITEMS_CACHE_TTL_SECONDS);
   return sendResponse(c, 200, 'Items fetched successfully!', items);
 };
 
@@ -80,8 +126,15 @@ export const getItems = async (c: Context) => {
   } = await c.req.json();
   const page = Math.max(Number(requestedPage || 1), 1);
   const limit = Math.min(Math.max(Number(requestedLimit || 50), 1), 100);
+  const userId = String(c.get('user')._id);
+  const cacheKey = itemsCacheKey(userId, parentFolder, page, limit);
+  const cached = await getCachedItems<ItemsResponse>(cacheKey);
+  if (cached)
+    return sendResponse(c, 200, 'Items retrieved successfully', cached);
 
-  const filter = { parent: parentFolder || null };
+  const filter = parentFolder
+    ? { parent: parentFolder }
+    : { parent: null, user: userId };
   const offset = (page - 1) * limit;
 
   const [files, folders] = await Promise.all([
@@ -93,11 +146,13 @@ export const getItems = async (c: Context) => {
       .lean(),
   ]);
 
-  return sendResponse(c, 200, 'Items retrieved successfully', {
+  const result = {
     files,
     folders,
     page,
-  });
+  };
+  await cacheItems(cacheKey, result, ITEMS_CACHE_TTL_SECONDS);
+  return sendResponse(c, 200, 'Items retrieved successfully', result);
 };
 
 export const searchItems = async (c: Context) => {
@@ -137,6 +192,11 @@ export const searchItems = async (c: Context) => {
     readable.filter((result) => result !== null).slice(0, 20),
   );
 };
+export const getStorage = async (c: Context) => {
+  const storage = await getStorageForUser(c.get('user')._id);
+  return sendResponse(c, 200, 'Storage retrieved successfully.', storage);
+};
+
 export const fileUpload = async (c: Context) => {
   const userId = String(c.get('user')._id);
   const { fileName, fileType, parentFolder } = await c.req.json();
@@ -158,21 +218,37 @@ export const createFile = async (c: Context) => {
     return sendResponse(c, 400, 'Missing required fields');
   }
 
+  if (!Number.isSafeInteger(Number(size)) || Number(size) <= 0) {
+    return sendResponse(c, 400, 'A valid file size is required');
+  }
+
   if (!key.startsWith('uploads/')) {
     return sendResponse(c, 400, 'Invalid key');
   }
   const locationError = await validateChildLocation(c, parentFolder);
   if (locationError) return locationError;
 
-  const file = await File.create({
-    user: userId,
-    name: itemName,
-    size: String(size),
-    mimeType,
-    key,
-    url: generatePublicFileUrl(key),
-    parent: parentFolder || null,
-  });
+  const fileSize = Number(size);
+  const reserved = await reserveStorageForFile(userId, fileSize);
+  if (!reserved) {
+    return sendResponse(c, 413, 'Not enough storage space for this file.');
+  }
+
+  let file;
+  try {
+    file = await File.create({
+      user: userId,
+      name: itemName,
+      size: String(fileSize),
+      mimeType,
+      key,
+      url: generatePublicFileUrl(key),
+      parent: parentFolder || null,
+    });
+  } catch (error) {
+    await releaseStorageForFile(userId, fileSize);
+    throw error;
+  }
   await writeResourceRelations({
     userId,
     type: 'file',
@@ -180,9 +256,11 @@ export const createFile = async (c: Context) => {
     parentType: parentFolder ? 'folder' : 'drive',
     parentId: parentFolder || userId,
   });
+  await invalidateItemCaches(userId, parentFolder);
 
   return sendResponse(c, 201, 'File saved successfully', file);
 };
+
 export const createFolder = async (c: Context) => {
   const userId = String(c.get('user')._id);
   const { parentFolder, name, size } = await c.req.json();
@@ -202,6 +280,7 @@ export const createFolder = async (c: Context) => {
     parentType: parentFolder ? 'folder' : 'drive',
     parentId: String(parentFolder || userId),
   });
+  await invalidateItemCaches(userId, parentFolder);
   return sendResponse(c, 200, 'Folder created successfully!', folder);
 };
 export const saveFolder = async (c: Context) => {
@@ -223,6 +302,7 @@ export const saveFolder = async (c: Context) => {
     parentType: parentFolder ? 'folder' : 'drive',
     parentId: parentFolder || userId,
   });
+  await invalidateItemCaches(userId, parentFolder);
 
   return sendResponse(c, 201, 'Folder saved successfully', folder);
 };
@@ -238,6 +318,7 @@ export const renameFolder = async (c: Context) => {
     { new: true },
   );
   if (!folder) return sendResponse(c, 404, 'Folder not found.');
+  await invalidateItemCaches(String(user._id), folder.parent);
   return sendResponse(c, 200, 'Folder renamed successfully!', folder);
 };
 
@@ -339,6 +420,7 @@ export const deleteFile = async (c: Context) => {
     File.deleteOne({ _id: fileId }),
     DirectShare.deleteMany({ objectType: 'file', objectId: fileId }),
   ]);
+  await invalidateItemCaches(String(file.user), file.parent);
 
   return sendResponse(c, 200, 'File moved to trash.');
 };
@@ -426,6 +508,14 @@ export const deleteFolder = async (c: Context) => {
     File.deleteMany({ _id: { $in: files.map((item) => item._id) } }),
     Folder.deleteMany({ _id: { $in: [...folderIds] } }),
     DirectShare.deleteMany({ objectId: { $in: objectIds } }),
+  ]);
+  await Promise.all([
+    ...[...folders, ...files].map((item) =>
+      invalidateItemCaches(String(item.user), item.parent),
+    ),
+    ...folders.map((item) =>
+      invalidateItems(`storex:items:folder:${String(item._id)}:*`),
+    ),
   ]);
 
   return sendResponse(c, 200, 'Folder moved to trash.');
@@ -535,6 +625,9 @@ export const restoreTrashItem = async (c: Context) => {
     trashOwner: user._id,
     batchId: root.batchId,
   });
+  await Promise.all(
+    items.map((item) => invalidateItemCaches(String(item.user), item.parent)),
+  );
 
   return sendResponse(c, 200, 'Item restored successfully.');
 };
@@ -596,6 +689,7 @@ export const getRecent = async (c: Context) => {
 
 export default {
   getAllItems,
+  getStorage,
   getItems,
   searchItems,
   fileUpload,

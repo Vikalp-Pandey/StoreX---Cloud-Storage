@@ -3,12 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "exports": {
+    ".": "./index.ts",
+    "./redis": "./redis.ts",
     "./s3": "./s3.ts",
+    "./openfga": "./openfga.ts",
     "./stripe": "./stripe.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1123.0",
+    "@openfga/sdk": "^0.9.7",
     "@packages/env": "workspace:*",
+    "redis": "^6.2.1",
     "stripe": "^22.6.2"
   }
 }

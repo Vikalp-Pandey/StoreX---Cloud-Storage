@@ -12,11 +12,13 @@ import {
 } from '@/components/auth/auth-shell';
 
 export default function VerifyOTPPage() {
-  const { verifyOtp } = useAuth();
+  const { verifyOtp, verifyEmail } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [timeLeft, setTimeLeft] = useState(300);
   const email = location.state?.email || 'your email address';
+  const challengeId: string | undefined = location.state?.challengeId;
+  const isVerifying = verifyOtp.isPending || verifyEmail.isPending;
   const {
     register,
     handleSubmit,
@@ -40,7 +42,7 @@ export default function VerifyOTPPage() {
     <AuthShell
       eyebrow="Email verification"
       title="Enter your verification code"
-      description={`We sent a six-digit code to ${email}.`}
+      description={`A six-digit code is on its way to ${email}.`}
     >
       <button
         type="button"
@@ -52,7 +54,13 @@ export default function VerifyOTPPage() {
       </button>
 
       <form
-        onSubmit={handleSubmit((data) => verifyOtp.mutate(data))}
+        onSubmit={handleSubmit((data) => {
+          if (challengeId) {
+            verifyEmail.mutate({ challengeId, email, otp: data.otp });
+          } else {
+            verifyOtp.mutate(data);
+          }
+        })}
         className="space-y-5"
       >
         <div>
@@ -82,13 +90,13 @@ export default function VerifyOTPPage() {
 
         <button
           type="submit"
-          disabled={verifyOtp.isPending}
+          disabled={isVerifying}
           className={authPrimaryButtonClass}
         >
-          {verifyOtp.isPending && (
+          {isVerifying && (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           )}
-          {verifyOtp.isPending ? 'Verifying...' : 'Verify email'}
+          {isVerifying ? 'Verifying...' : 'Verify email'}
         </button>
       </form>
 

@@ -51,7 +51,8 @@ const userSchema = new Schema<userInput>(
       expires: 7 * 24 * 60 * 60,
     },
     emailVerified: {
-      type: String,
+      type: Boolean,
+      default: false,
     },
 
     twoFactorEnabled: {

@@ -3,7 +3,11 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
-import { useBillingPortal, useBillingStatus, useCheckout } from '@/hooks/useBilling';
+import {
+  useBillingPortal,
+  useBillingStatus,
+  useCheckout,
+} from '@/hooks/useBilling';
 import {
   Building2,
   ChevronRight,
@@ -38,6 +42,7 @@ import {
 import {
   useCreateFolder,
   useGetAllItems,
+  useGetStorage,
   useGetItems,
   useGetRecent,
   useGetSharedWithMe,
@@ -46,6 +51,12 @@ import {
   useRestoreTrashItem,
   useRecordRecent,
 } from '@/hooks/useFiles';
+
+import {
+  formatStorageBytes,
+  formatStoragePercent,
+  storageUsedPercent,
+} from '@/lib/storage';
 
 const MAX_NESTING_DEPTH = 20;
 
@@ -462,14 +473,13 @@ function DriveView() {
                   if (
                     event.target === event.currentTarget &&
                     event.key === 'Enter'
-                  )
-                    {
-                      recordRecent.mutate({
-                        itemId: file._id,
-                        itemType: 'file',
-                      });
-                      filesApi.openFile(file.url);
-                    }
+                  ) {
+                    recordRecent.mutate({
+                      itemId: file._id,
+                      itemType: 'file',
+                    });
+                    filesApi.openFile(file.url);
+                  }
                 }}
                 className={
                   view === 'grid'
@@ -644,10 +654,7 @@ function TrashView() {
         {items.length ? (
           <div className="divide-y divide-zinc-800">
             {items.map((item) => (
-              <div
-                key={item._id}
-                className="flex items-center gap-3 px-5 py-4"
-              >
+              <div key={item._id} className="flex items-center gap-3 px-5 py-4">
                 <Trash2 className="size-4 text-zinc-500" aria-hidden="true" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-zinc-100">
@@ -690,11 +697,19 @@ function TrashView() {
 }
 
 function StorageView() {
+  const storageQuery = useGetStorage();
+  const storage = storageQuery.data;
+  const usedBytes = storage?.usedBytes ?? 0;
+  const limitBytes = storage?.limitBytes ?? 0;
+  const percent = storageUsedPercent(usedBytes, limitBytes);
+  const availableBytes = Math.max(0, limitBytes - usedBytes);
+  const breakdown = storage?.breakdown;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Storage"
-        description="Review usage, upload limits, and storage allocation."
+        description="Review storage usage and allocation."
         actions={
           <Link to="/dashboard/billing" className={primaryButton}>
             Upgrade plan
@@ -709,34 +724,58 @@ function StorageView() {
                 Personal workspace
               </p>
               <h2 className="mt-2 text-xl font-semibold text-white">
-                0 B of 5 GB used
+                {storageQuery.isPending
+                  ? 'Loading storage...'
+                  : storageQuery.isError
+                    ? 'Storage unavailable'
+                    : formatStorageBytes(usedBytes) +
+                      ' of ' +
+                      storage?.limit +
+                      ' used'}
               </h2>
               <p className="mt-2 text-sm text-zinc-500">
-                No active uploads or reserved storage.
+                Files in Trash still count toward storage.
               </p>
             </div>
             <span className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-100">
-              Free plan
+              {(storage?.plan ?? 'free').toUpperCase()} plan
             </span>
           </div>
           <div
             className="mt-7 h-2.5 overflow-hidden rounded-full bg-zinc-800"
-            aria-label="0 percent of storage used"
+            aria-label={formatStoragePercent(percent) + ' of storage used'}
           >
-            <div className="h-full w-0 rounded-full bg-zinc-200" />
+            <div
+              className="h-full rounded-full bg-zinc-200"
+              style={{ width: Math.min(percent, 100) + '%' }}
+            />
           </div>
           <div className="mt-3 flex justify-between text-xs text-zinc-500">
-            <span>0% used</span>
-            <span>5 GB available</span>
+            <span>
+              {storage ? formatStoragePercent(percent) + ' used' : ''}
+            </span>
+            <span>
+              {storage ? formatStorageBytes(availableBytes) + ' available' : ''}
+            </span>
           </div>
         </div>
         <div className={`${panelClass} p-5 sm:p-6`}>
-          <h2 className="text-sm font-medium text-zinc-100">Upload limits</h2>
+          <h2 className="text-sm font-medium text-zinc-100">
+            Upload information
+          </h2>
           <dl className="mt-5 space-y-4 text-sm">
             {[
-              ['Maximum file size', '100 MB'],
               ['Reserved storage', '0 B'],
-              ['Upload status', 'Available'],
+              [
+                'Upload status',
+                storage
+                  ? availableBytes > 0
+                    ? 'Available'
+                    : 'Storage full'
+                  : storageQuery.isPending
+                    ? 'Checking...'
+                    : 'Unavailable',
+              ],
             ].map(([label, value]) => (
               <div
                 key={label}
@@ -752,13 +791,21 @@ function StorageView() {
       <section className={`${panelClass} p-5 sm:p-6`}>
         <h2 className="text-sm font-medium text-zinc-100">Storage breakdown</h2>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          {['Documents', 'Media', 'Other files'].map((label) => (
+          {(
+            [
+              ['Documents', breakdown?.documents],
+              ['Media', breakdown?.media],
+              ['Other files', breakdown?.other],
+            ] as const
+          ).map(([label, bytes]) => (
             <div
               key={label}
               className="rounded-xl border border-zinc-800 bg-black p-4"
             >
               <p className="text-xs text-zinc-500">{label}</p>
-              <p className="mt-2 text-lg font-medium text-zinc-200">0 B</p>
+              <p className="mt-2 text-lg font-medium text-zinc-200">
+                {storage ? formatStorageBytes(bytes ?? 0) : '-'}
+              </p>
             </div>
           ))}
         </div>
@@ -776,11 +823,14 @@ const plans = [
 function BillingView() {
   const location = useLocation();
   const queryClient = useQueryClient();
-  const billingQuery = useBillingStatus(location.search.includes('checkout=success'));
+  const billingQuery = useBillingStatus(
+    location.search.includes('checkout=success'),
+  );
   const checkout = useCheckout();
   const portal = useBillingPortal();
   const currentPlan = billingQuery.data?.plan ?? 'free';
-  const hasSubscription = billingQuery.data?.subscription?.hasSubscription ?? false;
+  const hasSubscription =
+    billingQuery.data?.subscription?.hasSubscription ?? false;
   const working = checkout.isPending || portal.isPending;
 
   useEffect(() => {
@@ -795,44 +845,61 @@ function BillingView() {
         title="Billing"
         description="Manage your plan and payment preferences."
       />
-      {location.search.includes('checkout=success') && currentPlan === 'free' && (
+      {location.search.includes('checkout=success') &&
+        currentPlan === 'free' && (
+          <p className="text-sm text-zinc-300">
+            Payment submitted. Waiting for Stripe to confirm your subscription.
+          </p>
+        )}
+      {location.search.includes('checkout=cancel') && (
         <p className="text-sm text-zinc-300">
-          Payment submitted. Waiting for Stripe to confirm your subscription.
+          Checkout was canceled. Your plan is unchanged.
         </p>
       )}
-      {location.search.includes('checkout=cancel') && (
-        <p className="text-sm text-zinc-300">Checkout was canceled. Your plan is unchanged.</p>
-      )}
       {billingQuery.data && !billingQuery.data.billingReady && (
-        <p className="text-sm text-amber-300">Configure the Stripe webhook signing secret to enable Checkout.</p>
+        <p className="text-sm text-amber-300">
+          Configure the Stripe webhook signing secret to enable Checkout.
+        </p>
       )}
       {billingQuery.isError && (
-        <p className="text-sm text-red-300">Billing status is unavailable. Please reload.</p>
+        <p className="text-sm text-red-300">
+          Billing status is unavailable. Please reload.
+        </p>
       )}
       {hasSubscription && (
         <button
           type="button"
           disabled={working}
-          onClick={() => portal.mutate(undefined, {
-            onSuccess: (url) => window.location.assign(url),
-            onError: () => toast.error('Could not open the billing portal.'),
-          })}
+          onClick={() =>
+            portal.mutate(undefined, {
+              onSuccess: (url) => window.location.assign(url),
+              onError: () => toast.error('Could not open the billing portal.'),
+            })
+          }
           className={secondaryButton}
         >
           Manage subscription
         </button>
       )}
-      <section className="grid gap-4 lg:grid-cols-3" aria-label="Available plans">
+      <section
+        className="grid gap-4 lg:grid-cols-3"
+        aria-label="Available plans"
+      >
         {plans.map((plan) => {
           const current = plan.id === currentPlan;
           return (
             <article
               key={plan.id}
-              className={panelClass + ' flex flex-col p-5 sm:p-6' +
-                (current ? ' ring-1 ring-zinc-400' : '')}
+              className={
+                panelClass +
+                ' flex flex-col p-5 sm:p-6' +
+                (current ? ' ring-1 ring-zinc-400' : '')
+              }
             >
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">{plan.name}</h2>
+                <h2 className="text-lg font-semibold text-white">
+                  {plan.name}
+                </h2>
                 {current && (
                   <span className="rounded-md bg-zinc-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-200">
                     Current
@@ -841,33 +908,51 @@ function BillingView() {
               </div>
               <p className="mt-5 text-3xl font-semibold text-white">
                 {plan.price}
-                <span className="text-sm font-normal text-zinc-500"> / month</span>
+                <span className="text-sm font-normal text-zinc-500">
+                  {' '}
+                  / month
+                </span>
               </p>
-              <p className="mt-5 text-sm text-zinc-300">{plan.storage} total storage</p>
+              <p className="mt-5 text-sm text-zinc-300">
+                {plan.storage} total storage
+              </p>
               <button
                 type="button"
-                disabled={working || billingQuery.isPending || billingQuery.isError ||
+                disabled={
+                  working ||
+                  billingQuery.isPending ||
+                  billingQuery.isError ||
                   !billingQuery.data?.billingReady ||
-                  current || plan.id === 'free' || hasSubscription}
+                  current ||
+                  plan.id === 'free' ||
+                  hasSubscription
+                }
                 onClick={() => {
                   if (plan.id === 'pro' || plan.id === 'ultra') {
                     checkout.mutate(plan.id, {
                       onSuccess: (url) => window.location.assign(url),
-                      onError: () => toast.error('Could not start Stripe Checkout.'),
+                      onError: () =>
+                        toast.error('Could not start Stripe Checkout.'),
                     });
                   }
                 }}
-                className={(current ? secondaryButton : primaryButton) + ' mt-6 w-full'}
+                className={
+                  (current ? secondaryButton : primaryButton) + ' mt-6 w-full'
+                }
               >
-                {current ? 'Current plan' :
-                  hasSubscription ? 'Manage in billing portal' : 'Choose ' + plan.name}
+                {current
+                  ? 'Current plan'
+                  : hasSubscription
+                    ? 'Manage in billing portal'
+                    : 'Choose ' + plan.name}
               </button>
             </article>
           );
         })}
       </section>
       <p className="text-xs text-zinc-500">
-        Checkout is completed on Stripe. Storage changes after its signed webhook confirms payment.
+        Checkout is completed on Stripe. Storage changes after its signed
+        webhook confirms payment.
       </p>
     </div>
   );

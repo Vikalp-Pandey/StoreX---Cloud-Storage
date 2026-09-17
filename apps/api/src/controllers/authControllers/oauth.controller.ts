@@ -10,6 +10,7 @@ import {
 } from '@packages/httputils';
 import oauthService from '@/services/authServices/oauth.service';
 import userService from '@/services/authServices/user.service';
+import { ensureStorageForUser } from '@/services/fileServices/storage.service';
 
 const cookieConfig = {
   isSecure: env!.NODE_ENV === 'production',
@@ -45,6 +46,7 @@ export const signinwithGithub = async (c: Context) => {
     if (!token) {
       return sendResponse(c, 404, 'Token not Found');
     }
+    await ensureStorageForUser(isExisting._id);
     sendCookie(c, 'accessToken', token, cookieConfig, {
       maxAge: 1000 * 60 * 60,
     });
@@ -60,6 +62,7 @@ export const signinwithGithub = async (c: Context) => {
     { expiresIn: '7d' },
   );
   newUser.access_token = token;
+  await ensureStorageForUser(newUser._id);
 
   sendCookie(c, 'accessToken', token, cookieConfig, {
     maxAge: 1000 * 60 * 60,
@@ -96,6 +99,7 @@ export const signinwithGoogle = async (c: Context) => {
       return sendResponse(c, 404, 'Token not Found');
     }
 
+    await ensureStorageForUser(isExisting._id);
     sendCookie(c, 'accessToken', token, cookieConfig, {
       maxAge: 1000 * 60 * 60,
     });
@@ -111,6 +115,7 @@ export const signinwithGoogle = async (c: Context) => {
   );
 
   newUser.access_token = token;
+  await ensureStorageForUser(newUser._id);
 
   sendCookie(c, 'accessToken', token, cookieConfig, {
     maxAge: 1000 * 60 * 60,

@@ -6,6 +6,7 @@ import {
   ForgotPasswordEmail,
   OtpVerificationEmail,
   SignupVerificationEmail,
+  UserInviteEmail,
 } from './template';
 import { render } from '@react-email/components';
 
@@ -28,6 +29,9 @@ export class EmailService {
       host,
       port,
       secure: port === 465,
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 30_000,
       auth: {
         user: username,
         pass: password,
@@ -58,6 +62,9 @@ export class EmailService {
         break;
       case 'email_otp':
         component = SignupVerificationEmail(template.data);
+        break;
+      case 'user_invite':
+        component = UserInviteEmail(template.data);
         break;
       default:
         throw new Error('Unsupported email template type');

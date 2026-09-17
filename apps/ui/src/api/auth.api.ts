@@ -38,6 +38,15 @@ export const authApi = {
     return res.data;
   },
 
+  verifyEmail: async (data: {
+    challengeId: string;
+    email: string;
+    otp: string;
+  }) => {
+    const res = await api.post('/auth/verify-email', data);
+    return res.data;
+  },
+
   getUserStatus: async () => {
     const res = await api.get('/auth/me');
     return res.data;

@@ -5,7 +5,7 @@ import { ResetPassword } from '@/models/authModels/resetPassword.model';
 import User from '@/models/authModels/user.model';
 import jwt from 'jsonwebtoken';
 import {
-  verifyUserDocument,
+  VerifyUserDocument,
   verifyUser,
   VerificationType,
 } from '@/models/authModels/verifyUser.model';
@@ -69,27 +69,35 @@ export const generateOTP = async (
   email: string,
   verification_type: VerificationType,
 ) => {
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otp = crypto.randomInt(100000, 1000000).toString();
   await verifyUser.create({
     email,
     otp,
-    verification_type,
+    verificationType: verification_type,
+    expiresAt: new Date(Date.now() + 5 * 60 * 1000),
   });
   return otp;
 };
 
 export const validateOTP = async (otp: string) => {
   try {
-    const validOTP = await verifyUser.findOne({ otp });
+    const validOTP = await verifyUser
+      .findOne({
+        otp,
+        verificationType: VerificationType.Signin,
+        consumedAt: { $exists: false },
+        expiresAt: { $gt: new Date() },
+      })
+      .select('+otp');
     return validOTP;
   } catch (error) {
     return null;
   }
 };
 
-export const deleteOtp = async (otp: verifyUserDocument) => {
+export const deleteOtp = async (otp: VerifyUserDocument) => {
   try {
-    verifyUser.deleteOne({ _id: otp._id });
+    await verifyUser.deleteOne({ _id: otp._id });
   } catch (error) {
     return { OTPDeletionError: error };
   }

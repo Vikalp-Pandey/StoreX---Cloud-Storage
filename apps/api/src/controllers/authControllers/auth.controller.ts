@@ -7,12 +7,15 @@ import {
   sendResponse,
   CookieConfig,
 } from '@packages/httputils';
-import User, { accountType } from '@/models/authModels/user.model';
+import { accountType } from '@/models/authModels/user.model';
 import jwtService from '@/services/authServices/auth.service';
 import userService from '@/services/authServices/user.service';
-import commonService from '@/services/common.service';
 import authService from '@/services/authServices/auth.service';
 import { VerificationType } from '@/models/authModels/verifyUser.model';
+import { ensureStorageForUser } from '@/services/fileServices/storage.service';
+import { createSignupAccount } from '@/services/authServices/signup.service';
+import { verifySignupEmail } from '@/services/authServices/emailVerification.service';
+import { enqueueSignupEmail } from '@/services/emailServices/signupEmail.queue';
 
 const cookieConfig = {
   isSecure: env!.NODE_ENV === 'production',
@@ -29,7 +32,11 @@ const emailService = new EmailService(
   env!.SMTP_PASSWORD,
 );
 
-const setAccessTokenCookie = (c: Context, accessToken: string, options: any = {}) => {
+const setAccessTokenCookie = (
+  c: Context,
+  accessToken: string,
+  options: any = {},
+) => {
   sendCookie(c, 'accessToken', accessToken, cookieConfig, {
     sameSite: 'Lax',
     maxAge: 1000 * 60 * 60,
@@ -56,7 +63,6 @@ const sendOtpEmail = async (
   });
 };
 
-
 export const getUserStatus = async (c: Context) => {
   const user = c.get('user');
   if (user) {
@@ -65,43 +71,21 @@ export const getUserStatus = async (c: Context) => {
   return sendResponse(c, 401, 'User Info:', { message: 'Not logged in' });
 };
 
-
 export const signupUser = async (c: Context) => {
   const { name, email, password } = await c.req.json();
 
-  const isExisting = await commonService.findInstance(User, 'email', email);
-
-  if (isExisting && isExisting.length > 0) {
-    logger('ERROR', 'User already exists:', email);
-    return sendResponse(c, 409, 'User with email already exists', {
-      isExisting,
-    });
+  if (!name || !email || !password) {
+    return sendResponse(c, 400, 'Name, email and password are required');
   }
 
-  const otp = await jwtService.generateOTP(email, VerificationType.Signup);
+  const result = await createSignupAccount({ name, email, password });
+  await enqueueSignupEmail(result.challengeId);
 
-  await sendOtpEmail(
-    email,
-    name,
-    otp,
-    'Email Verification for Signup on Tierly',
-  );
-
-  const user = await userService.createUser({
-    name,
-    email,
-    password,
-    accountType: accountType.Local,
-    twoFactorEnabled: false,
-    emailVerified: false,
+  return sendResponse(c, 201, 'Account created. Verification email queued.', {
+    userId: result.userId,
+    email: result.email,
+    challengeId: result.challengeId,
   });
-
-  return sendResponse(
-    c,
-    200,
-    'An Otp is sent to email for verification.',
-    user,
-  );
 };
 
 export const signinUser = async (c: Context) => {
@@ -143,6 +127,7 @@ export const signinUser = async (c: Context) => {
     return sendResponse(c, 404, 'Access token not found');
   }
 
+  await ensureStorageForUser(user._id);
   setAccessTokenCookie(c, accessToken);
 
   return sendResponse(c, 200, 'User signed in successfully', {
@@ -175,61 +160,47 @@ export const verifyOTP = async (c: Context) => {
     return sendResponse(c, 400, 'Invalid OTP');
   }
 
-  const { email, verification_type } = validOtp;
-
-  if (verification_type === VerificationType.Signup) {
-    const isExisting = await userService.findUser({ email: validOtp.email });
-
-    if (!isExisting) {
-      logger('ERROR', 'User Not Found', validOtp.email);
-      return sendResponse(c, 404, 'User Already  exists');
-    }
-
-    const accessToken = await jwtService.signJwt(
-      { id: isExisting._id.toString() },
-      env!.ACCESS_SECRET,
-      { expiresIn: env!.ACCESS_SECRET_TTL },
-    );
-
-    isExisting.access_token = accessToken;
-
-    await jwtService.deleteOtp(validOtp);
-
-    isExisting.emailVerified = true;
-
-    setAccessTokenCookie(c, accessToken);
-
-    return sendResponse(c, 200, 'OTP verified successfully', {
-      user: {
-        name: isExisting.name,
-        email: isExisting.email,
-        accessToken,
-      },
-    });
+  const user = await userService.findUser({ email: validOtp.email });
+  if (!user) {
+    return sendResponse(c, 404, 'User not found');
   }
 
-  if (verification_type === VerificationType.Signin) {
-    const user = await userService.findUser({ email });
-
-    if (!user) {
-      return sendResponse(c, 404, 'User not found');
-    }
-
-    const accessToken = await jwtService.findandreissueToken(user.email);
-
-    if (!accessToken) {
-      return sendResponse(c, 500, 'AccessToken not Found', { accessToken });
-    }
-
-    setAccessTokenCookie(c, accessToken, { maxAge: 3600000 });
-
-    await jwtService.deleteOtp(validOtp);
-
-    return sendResponse(c, 200, 'OTP verified successfully', {
-      user,
-      accessToken,
-    });
+  const accessToken = await jwtService.findandreissueToken(user.email);
+  if (!accessToken) {
+    return sendResponse(c, 500, 'AccessToken not Found');
   }
+
+  await ensureStorageForUser(user._id);
+  await jwtService.deleteOtp(validOtp);
+  setAccessTokenCookie(c, accessToken, { maxAge: 3600000 });
+
+  return sendResponse(c, 200, 'OTP verified successfully', {
+    user,
+    accessToken,
+  });
+};
+
+export const verifyEmail = async (c: Context) => {
+  const { challengeId, email, otp } = await c.req.json();
+
+  if (!challengeId || !email || !otp) {
+    return sendResponse(c, 400, 'Challenge ID, email and OTP are required');
+  }
+
+  const result = await verifySignupEmail({ challengeId, email, otp });
+  if (!result.ok) {
+    return sendResponse(c, 400, `OTP ${result.reason.toLowerCase()}`);
+  }
+
+  setAccessTokenCookie(c, result.accessToken);
+  return sendResponse(c, 200, 'Email verified successfully', {
+    user: {
+      name: result.user.name,
+      email: result.user.email,
+      emailVerified: result.user.emailVerified,
+      accessToken: result.accessToken,
+    },
+  });
 };
 
 export const forgotPassword = async (c: Context) => {
@@ -298,6 +269,7 @@ const jwtAuthController = {
   signinUser,
   logoutUser,
   verifyOTP,
+  verifyEmail,
   forgotPassword,
   resetPassword,
 };
