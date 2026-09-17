@@ -3,7 +3,10 @@ import { Types } from 'mongoose';
 import { getStripe } from '@packages/clients/stripe';
 import env from '@packages/env';
 import { ApiError } from '@packages/httputils';
-import { Subscription, type PaidPlan } from '@/models/billingModels/subscription.model';
+import {
+  Subscription,
+  type PaidPlan,
+} from '@/models/billingModels/subscription.model';
 import { Storage } from '@/models/fileModels/storage.model';
 import { ensureStorageForUser } from '@/services/fileServices/storage.service';
 
@@ -13,8 +16,13 @@ export const paidPlans = {
 } as const;
 
 export function requireBillingConfig() {
-  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET ||
-      !env.STRIPE_PRO_PRICE_ID || !env.STRIPE_ULTRA_PRICE_ID || !env.APP_URL) {
+  if (
+    !env.STRIPE_SECRET_KEY ||
+    !env.STRIPE_WEBHOOK_SECRET ||
+    !env.STRIPE_PRO_PRICE_ID ||
+    !env.STRIPE_ULTRA_PRICE_ID ||
+    !env.APP_URL
+  ) {
     throw new ApiError(503, 'Stripe billing is not fully configured');
   }
 }
@@ -27,30 +35,52 @@ export async function createCheckoutForUser(
   await ensureStorageForUser(user._id);
   const stripe = getStripe();
   const existing = await Subscription.findOne({ user: user._id });
-  if (existing?.status === 'checkout_pending' && existing.stripeCheckoutSessionId) {
-    const pending = await stripe.checkout.sessions.retrieve(existing.stripeCheckoutSessionId);
+  if (
+    existing?.status === 'checkout_pending' &&
+    existing.stripeCheckoutSessionId
+  ) {
+    const pending = await stripe.checkout.sessions.retrieve(
+      existing.stripeCheckoutSessionId,
+    );
     if (pending.status === 'open' && pending.url) return pending.url;
     if (pending.status === 'complete') {
-      throw new ApiError(409, 'Waiting for Stripe to confirm the previous checkout');
+      throw new ApiError(
+        409,
+        'Waiting for Stripe to confirm the previous checkout',
+      );
     }
   }
-  if (existing?.stripeSubscriptionId &&
-      !['canceled', 'incomplete_expired', 'checkout_pending'].includes(existing.status)) {
+  if (
+    existing?.stripeSubscriptionId &&
+    !['canceled', 'incomplete_expired', 'checkout_pending'].includes(
+      existing.status,
+    )
+  ) {
     throw new ApiError(409, 'Manage your existing subscription in Billing');
   }
 
   const priceId = paidPlans[plan].priceId!;
   const price = await stripe.prices.retrieve(priceId);
-  if (!price.active || price.type !== 'recurring' ||
-      price.recurring?.interval !== 'month' || price.unit_amount === null) {
-    throw new ApiError(503, 'The Stripe plan price must be an active monthly flat rate');
+  if (
+    !price.active ||
+    price.type !== 'recurring' ||
+    price.recurring?.interval !== 'month' ||
+    price.unit_amount === null
+  ) {
+    throw new ApiError(
+      503,
+      'The Stripe plan price must be an active monthly flat rate',
+    );
   }
 
-  const customerId = existing?.stripeCustomerId ??
-    (await stripe.customers.create(
-      { email: user.email, metadata: { userId: String(user._id) } },
-      { idempotencyKey: 'storex-customer-' + String(user._id) },
-    )).id;
+  const customerId =
+    existing?.stripeCustomerId ??
+    (
+      await stripe.customers.create(
+        { email: user.email, metadata: { userId: String(user._id) } },
+        { idempotencyKey: 'storex-customer-' + String(user._id) },
+      )
+    ).id;
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -67,11 +97,13 @@ export async function createCheckoutForUser(
     { user: user._id },
     {
       $set: {
-        plan, amount: price.unit_amount, currency: price.currency,
-        status: 'checkout_pending', stripeCustomerId: customerId,
+        plan,
+        amount: price.unit_amount,
+        currency: price.currency,
+        status: 'checkout_pending',
+        stripeCustomerId: customerId,
         stripeCheckoutSessionId: session.id,
       },
-
     },
     { upsert: true },
   );
@@ -91,33 +123,46 @@ export async function createPortalForUser(userId: Types.ObjectId) {
   return session.url;
 }
 
-export async function syncSubscription(stripeSubscription: Stripe.Subscription) {
+export async function syncSubscription(
+  stripeSubscription: Stripe.Subscription,
+) {
   const userId = stripeSubscription.metadata.userId;
   if (!Types.ObjectId.isValid(userId)) {
     throw new Error('Stripe subscription has no valid StoreX user ID');
   }
   const record = await Subscription.findOne({ user: userId });
-  const customerId = typeof stripeSubscription.customer === 'string'
-    ? stripeSubscription.customer
-    : stripeSubscription.customer.id;
+  const customerId =
+    typeof stripeSubscription.customer === 'string'
+      ? stripeSubscription.customer
+      : stripeSubscription.customer.id;
   if (!record || record.stripeCustomerId !== customerId) {
     throw new Error('Stripe customer does not match the StoreX subscription');
   }
-  if (record.status === 'checkout_pending' &&
-      record.stripeSubscriptionId === stripeSubscription.id) {
+  if (
+    record.status === 'checkout_pending' &&
+    record.stripeSubscriptionId === stripeSubscription.id
+  ) {
     return; // Ignore a delayed event for the previous, canceled subscription.
   }
-  if (record.stripeSubscriptionId &&
-      record.stripeSubscriptionId !== stripeSubscription.id &&
-      record.status === 'active') {
+  if (
+    record.stripeSubscriptionId &&
+    record.stripeSubscriptionId !== stripeSubscription.id &&
+    record.status === 'active'
+  ) {
     return; // A delayed event from an older subscription.
   }
 
   const price = stripeSubscription.items.data[0]?.price;
-  const plan = price?.id === paidPlans.pro.priceId ? 'pro'
-    : price?.id === paidPlans.ultra.priceId ? 'ultra' : null;
+  const plan =
+    price?.id === paidPlans.pro.priceId
+      ? 'pro'
+      : price?.id === paidPlans.ultra.priceId
+        ? 'ultra'
+        : null;
   if (!plan || price.unit_amount === null) {
-    throw new Error('Stripe subscription has an unknown or non-flat-rate price');
+    throw new Error(
+      'Stripe subscription has an unknown or non-flat-rate price',
+    );
   }
 
   const active = stripeSubscription.status === 'active';
@@ -126,7 +171,9 @@ export async function syncSubscription(stripeSubscription: Stripe.Subscription) 
     { user: userId },
     {
       $set: {
-        plan, amount: price.unit_amount, currency: price.currency,
+        plan,
+        amount: price.unit_amount,
+        currency: price.currency,
         status: stripeSubscription.status,
         stripeSubscriptionId: stripeSubscription.id,
       },
@@ -145,13 +192,19 @@ export async function processStripeEvent(event: Stripe.Event) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     if (session.mode !== 'subscription' || !session.subscription) return;
-    const subscriptionId = typeof session.subscription === 'string'
-      ? session.subscription : session.subscription.id;
-    await syncSubscription(await getStripe().subscriptions.retrieve(subscriptionId));
+    const subscriptionId =
+      typeof session.subscription === 'string'
+        ? session.subscription
+        : session.subscription.id;
+    await syncSubscription(
+      await getStripe().subscriptions.retrieve(subscriptionId),
+    );
   }
-  if (event.type === 'customer.subscription.created' ||
-      event.type === 'customer.subscription.updated' ||
-      event.type === 'customer.subscription.deleted') {
+  if (
+    event.type === 'customer.subscription.created' ||
+    event.type === 'customer.subscription.updated' ||
+    event.type === 'customer.subscription.deleted'
+  ) {
     const incoming = event.data.object as Stripe.Subscription;
     // Read current Stripe state so retried or out-of-order events cannot roll back a plan.
     const current = await getStripe().subscriptions.retrieve(incoming.id);

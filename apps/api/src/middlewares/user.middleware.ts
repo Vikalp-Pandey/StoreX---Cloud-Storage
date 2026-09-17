@@ -36,10 +36,10 @@ export const validateUser = async (c: Context, next: Next) => {
   await next();
 };
 
-export const authenticateUser = async (c:Context,next:Next)=>{
+export const authenticateUser = async (c: Context, next: Next) => {
   const user = await c.get('user');
-  if(!user){
-    return sendResponse(c,401,'Unauthenticated User')
+  if (!user) {
+    return sendResponse(c, 401, 'Unauthenticated User');
   }
   await next();
-}
+};

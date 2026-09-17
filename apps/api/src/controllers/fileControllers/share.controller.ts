@@ -1,4 +1,6 @@
 import { asyncHandler, sendResponse } from '@packages/httputils';
+import { EmailService } from '@services/emailservices';
+import env from '@packages/env';
 import { Context } from 'hono';
 import { DirectShare } from '@/models/fileModels/directShare.model';
 import { File } from '@/models/fileModels/file.model';
@@ -12,6 +14,15 @@ import {
 
 const allowedPermissions = new Set<Permission>(['read', 'create', 'delete']);
 const MAX_SHARED_TREE_DEPTH = 20;
+const emailService = new EmailService(
+  env.SMTP_NAME,
+  env.SMTP_MAIL,
+  env.SMTP_REPLY_TO,
+  env.SMTP_HOST,
+  env.SMTP_PORT,
+  env.SMTP_USERNAME,
+  env.SMTP_PASSWORD,
+);
 
 type FolderTreeNode = Record<string, unknown> & {
   _id: unknown;
@@ -193,6 +204,47 @@ export const searchUsers = asyncHandler(async (c: Context) => {
   return sendResponse(c, 200, 'Users found', users);
 });
 
+export const inviteUser = asyncHandler(async (c: Context) => {
+  const sender = c.get('user');
+  const { email, itemName } = await c.req.json();
+  const recipientEmail = email.trim().toLowerCase();
+
+  if (!sender?._id) return sendResponse(c, 401, 'Authentication Required');
+  if (!/^\S+@\S+\.\S+$/.test(recipientEmail))
+    return sendResponse(c, 400, 'A valid email is required');
+  if (typeof itemName !== 'string' || !itemName.trim())
+    return sendResponse(c, 400, 'Item name is required');
+
+  const existingUser = await User.findOne({ email: recipientEmail }).select(
+    '_id',
+  );
+  if (existingUser)
+    return sendResponse(c, 409, 'This user already has a StoreX account');
+  if (!env.APP_URL)
+    return sendResponse(c, 500, 'StoreX invite URL is not configured');
+
+  await emailService.sendEmail({
+    to: recipientEmail,
+    subject: `${sender.name} invited you to StoreX`,
+    template: {
+      type: 'user_invite',
+      data: {
+        inviter_name: sender.name,
+        item_name: itemName.trim(),
+        invite_link: `${env.APP_URL.replace(/\/$/, '')}/signup`,
+      },
+    },
+  });
+
+  return sendResponse(c, 200, `Invite email sent to ${recipientEmail}.`);
+});
+
 export { shareItem as shareItems };
 
-export default { shareItem, getSharedWithMe, getSharesForItem, searchUsers };
+export default {
+  shareItem,
+  getSharedWithMe,
+  getSharesForItem,
+  searchUsers,
+  inviteUser,
+};

@@ -16,7 +16,7 @@ const getGithubURL = async () => {
 const signinwithGithub = async (code: string) => {
   const tokenResponse = await axios.post(
     'https://github.com/login/oauth/access_token',
-    
+
     {
       client_id: env!.GITHUB_CLIENT_ID,
       client_secret: env!.GITHUB_CLIENT_SECRET,

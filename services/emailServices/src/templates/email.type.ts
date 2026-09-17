@@ -1,4 +1,9 @@
-import { ForgotPasswordData, LoginOTPData, SignupOTPData } from './template';
+import {
+  ForgotPasswordData,
+  LoginOTPData,
+  SignupOTPData,
+  UserInviteData,
+} from './template';
 
 interface LoginOTP {
   type: 'login_otp';
@@ -15,7 +20,12 @@ interface ForgotPassword {
   data: ForgotPasswordData;
 }
 
-export type MailTemplate = LoginOTP | ForgotPassword | EmailOTP;
+interface UserInvite {
+  type: 'user_invite';
+  data: UserInviteData;
+}
+
+export type MailTemplate = LoginOTP | ForgotPassword | EmailOTP | UserInvite;
 
 export interface EmailArgs {
   to: string | string[];

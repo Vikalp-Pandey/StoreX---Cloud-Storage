@@ -64,7 +64,12 @@ export const useAuth = () => {
     onSuccess: (data, variables) => {
       const infoMessage = data?.detail;
       toast.info(infoMessage);
-      navigate('/verify-otp', { state: { email: variables.email } });
+      navigate('/verify-otp', {
+        state: {
+          email: variables.email,
+          challengeId: data?.data?.challengeId,
+        },
+      });
     },
     onError: (error: unknown) => {
       toast.error(getErrorMessage(error, 'Registration failed.'));
@@ -77,6 +82,20 @@ export const useAuth = () => {
       const successMessage = data?.detail;
       toast.success(successMessage);
       navigate('/dashboard');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, 'Unable to verify the code.'));
+    },
+  });
+
+  const verifyEmail = useMutation({
+    mutationFn: authApi.verifyEmail,
+    onSuccess: (data) => {
+      toast.success(data?.detail);
+      navigate('/dashboard');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, 'Unable to verify the code.'));
     },
   });
 
@@ -113,6 +132,7 @@ export const useAuth = () => {
     signin,
     signup,
     verifyOtp,
+    verifyEmail,
     forgotPassword,
     resetPassword,
     user,

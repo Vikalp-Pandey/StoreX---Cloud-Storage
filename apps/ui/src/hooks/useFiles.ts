@@ -6,6 +6,12 @@ const fileQueryKeys = {
   items: (parent?: string) => ['files', 'getItems', parent] as const,
 };
 
+export const useGetStorage = () =>
+  useQuery({
+    queryKey: ['files', 'storage'],
+    queryFn: filesApi.getStorage,
+  });
+
 export const useGetAllItems = () =>
   useQuery({
     queryKey: fileQueryKeys.allItems,

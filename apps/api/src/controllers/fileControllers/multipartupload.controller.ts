@@ -32,7 +32,10 @@ export async function presignPart(c: Context) {
   }>();
 
   if (!key || !uploadId || !Number.isInteger(partNumber) || partNumber < 1) {
-    return c.json({ error: 'key, uploadId, and a positive partNumber are required' }, 400);
+    return c.json(
+      { error: 'key, uploadId, and a positive partNumber are required' },
+      400,
+    );
   }
 
   try {

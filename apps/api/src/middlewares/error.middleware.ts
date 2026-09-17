@@ -16,6 +16,13 @@ export const errorHandler = (err: Error, c: Context) => {
     );
   }
 
+  if ('code' in err && err.code === 11000) {
+    return c.json(
+      { success: false, message: 'User with email already exists' },
+      409,
+    );
+  }
+
   return c.json(
     {
       success: false,

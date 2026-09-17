@@ -15,7 +15,12 @@ export interface SubscriptionRecord extends Document {
 
 const subscriptionSchema = new Schema<SubscriptionRecord>(
   {
-    user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    user: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      unique: true,
+    },
     plan: { type: String, enum: ['pro', 'ultra'], required: true },
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, required: true },
@@ -28,6 +33,12 @@ const subscriptionSchema = new Schema<SubscriptionRecord>(
 );
 
 subscriptionSchema.index({ stripeCustomerId: 1 });
-subscriptionSchema.index({ stripeSubscriptionId: 1 }, { unique: true, sparse: true });
+subscriptionSchema.index(
+  { stripeSubscriptionId: 1 },
+  { unique: true, sparse: true },
+);
 
-export const Subscription = model<SubscriptionRecord>('Subscription', subscriptionSchema);
+export const Subscription = model<SubscriptionRecord>(
+  'Subscription',
+  subscriptionSchema,
+);

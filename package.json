@@ -16,14 +16,19 @@
     "add:ui": "pnpm --filter ui add",
     "add:email": "pnpm --filter emailservices add",
     "add:fileupload": "pnpm --filter fileupload add",
-    "add:multipartupload": "pnpm --filter multipartuploadservices add"
+    "add:multipartupload": "pnpm --filter multipartuploadservices add",
+    "sst:dev": "sst dev",
+    "sst:deploy": "sst deploy",
+    "sst:remove": "sst remove"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.30.3",
   "devDependencies": {
+    "@types/node": "^26.6.0",
     "prettier": "^3.8.1",
+    "sst": "4.17.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "turbo": "^2.8.14"

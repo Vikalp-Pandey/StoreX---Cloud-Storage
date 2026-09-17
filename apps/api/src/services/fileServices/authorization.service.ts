@@ -1,4 +1,4 @@
-import { fgaClient } from '@/clients/openfga';
+import { fgaClient } from '@packages/clients/openfga';
 
 export type ResourceType = 'drive' | 'folder' | 'file';
 export type Permission = 'read' | 'create' | 'delete';

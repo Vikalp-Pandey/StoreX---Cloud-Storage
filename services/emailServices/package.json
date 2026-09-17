@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "src/templates/email.service.ts",
+  "exports": {
+    ".": "./src/templates/email.service.ts"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

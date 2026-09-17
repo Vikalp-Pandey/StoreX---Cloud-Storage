@@ -170,3 +170,54 @@ export function SignupVerificationEmail(data: SignupOTPData) {
     </Html>
   );
 }
+
+export interface UserInviteData {
+  inviter_name: string;
+  item_name: string;
+  invite_link: string;
+}
+
+export function UserInviteEmail(data: UserInviteData) {
+  return (
+    <Html>
+      <Head />
+      <Preview>{data.inviter_name} invited you to StoreX</Preview>
+
+      <Tailwind>
+        <Body className="bg-gray-100 px-6 py-8 font-sans">
+          <Container className="bg-white max-w-md mx-auto p-8 rounded-xl shadow-lg">
+            <Section>
+              <Heading className="text-2xl font-bold text-center mb-4">
+                You’re invited to StoreX
+              </Heading>
+
+              <Text className="text-gray-700 text-base">
+                <span className="font-semibold">{data.inviter_name}</span> wants
+                to share <strong>{data.item_name}</strong> with you.
+              </Text>
+
+              <Text className="text-gray-700 text-base">
+                Create a StoreX account to receive access to shared files and
+                folders.
+              </Text>
+
+              <Section className="text-center mt-6 mb-6">
+                <Link
+                  href={data.invite_link}
+                  className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold inline-block"
+                >
+                  Join StoreX
+                </Link>
+              </Section>
+
+              <Text className="text-xs text-gray-500 text-center">
+                If you were not expecting this invitation, you can ignore this
+                email.
+              </Text>
+            </Section>
+          </Container>
+        </Body>
+      </Tailwind>
+    </Html>
+  );
+}

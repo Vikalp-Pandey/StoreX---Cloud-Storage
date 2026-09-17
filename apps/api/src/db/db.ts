@@ -7,5 +7,6 @@ export const connectToMongoDb = async (MongoURI: string) => {
     logger('INFO', 'MongoDB connected successfully');
   } catch (error: any) {
     logger('ERROR', `DbConnectionError: ${error.message}`);
+    throw error;
   }
 };
