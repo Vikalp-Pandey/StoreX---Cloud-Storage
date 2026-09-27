@@ -35,7 +35,7 @@ export function AuthShell({
             to="/"
             className="flex items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
           >
-            <span className="flex size-9 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900">
+            <span className="flex size-9 items-center justify-center">
               <Layers className="size-4 text-zinc-100" aria-hidden="true" />
             </span>
             <span className="text-sm font-bold tracking-[0.28em] text-white">

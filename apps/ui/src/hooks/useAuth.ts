@@ -68,6 +68,7 @@ export const useAuth = () => {
         state: {
           email: variables.email,
           challengeId: data?.data?.challengeId,
+          emailQueued: data?.data?.emailQueued,
         },
       });
     },
@@ -96,6 +97,20 @@ export const useAuth = () => {
     },
     onError: (error: unknown) => {
       toast.error(getErrorMessage(error, 'Unable to verify the code.'));
+    },
+  });
+
+  const resendSignupVerification = useMutation({
+    mutationFn: authApi.resendSignupVerification,
+    onSuccess: (data) => {
+      if (data?.data?.emailQueued === false) {
+        toast.error(data?.detail || 'Unable to send another code.');
+        return;
+      }
+      toast.success(data?.detail);
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, 'Unable to send another code.'));
     },
   });
 
@@ -133,6 +148,7 @@ export const useAuth = () => {
     signup,
     verifyOtp,
     verifyEmail,
+    resendSignupVerification,
     forgotPassword,
     resetPassword,
     user,

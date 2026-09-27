@@ -29,6 +29,8 @@ export const useGetSharedWithMe = () =>
   useQuery({
     queryKey: ['files', 'shared'],
     queryFn: filesApi.sharedWithMe,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
 
 export const useGetTrash = () =>

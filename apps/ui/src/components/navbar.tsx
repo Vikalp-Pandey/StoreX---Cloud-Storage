@@ -12,7 +12,6 @@ import {
   LogOut,
   Settings,
   Info,
-  Bell,
   LogIn,
   ShieldCheck,
 } from 'lucide-react';

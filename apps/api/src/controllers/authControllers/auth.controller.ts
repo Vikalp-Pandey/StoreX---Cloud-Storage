@@ -7,14 +7,16 @@ import {
   sendResponse,
   CookieConfig,
 } from '@packages/httputils';
-import { accountType } from '@/models/authModels/user.model';
 import jwtService from '@/services/authServices/auth.service';
 import userService from '@/services/authServices/user.service';
 import authService from '@/services/authServices/auth.service';
 import { VerificationType } from '@/models/authModels/verifyUser.model';
 import { ensureStorageForUser } from '@/services/fileServices/storage.service';
 import { createSignupAccount } from '@/services/authServices/signup.service';
-import { verifySignupEmail } from '@/services/authServices/emailVerification.service';
+import {
+  recreateSignupEmailChallenge,
+  verifySignupEmail,
+} from '@/services/authServices/emailVerification.service';
 import { enqueueSignupEmail } from '@/services/emailServices/signupEmail.queue';
 
 const cookieConfig = {
@@ -38,7 +40,6 @@ const setAccessTokenCookie = (
   options: any = {},
 ) => {
   sendCookie(c, 'accessToken', accessToken, cookieConfig, {
-    sameSite: 'Lax',
     maxAge: 1000 * 60 * 60,
     ...options,
   });
@@ -79,22 +80,91 @@ export const signupUser = async (c: Context) => {
   }
 
   const result = await createSignupAccount({ name, email, password });
-  await enqueueSignupEmail(result.challengeId);
 
-  return sendResponse(c, 201, 'Account created. Verification email queued.', {
-    userId: result.userId,
-    email: result.email,
-    challengeId: result.challengeId,
-  });
+  let emailQueued = true;
+  try {
+    await enqueueSignupEmail(result.challengeId);
+  } catch {
+    emailQueued = false;
+    logger(
+      'ERROR',
+      'Signup completed, but the verification email could not be queued',
+      { userId: result.userId },
+    );
+  }
+
+  return sendResponse(
+    c,
+    201,
+    emailQueued
+      ? 'Account created. Verification email queued.'
+      : 'Account created, but the verification email could not be queued. Please request another code.',
+    {
+      userId: result.userId,
+      email: result.email,
+      challengeId: result.challengeId,
+      emailQueued,
+    },
+  );
+};
+
+export const resendSignupVerification = async (c: Context) => {
+  const { email } = await c.req.json();
+
+  if (typeof email !== 'string' || !email.trim()) {
+    return sendResponse(c, 400, 'Email is required');
+  }
+
+  const result = await recreateSignupEmailChallenge(email);
+
+  // Keep the response generic when there is no matching unverified account.
+  if (!result) {
+    return sendResponse(
+      c,
+      200,
+      'If an unverified account exists, a verification email will be sent.',
+    );
+  }
+
+  let emailQueued = true;
+  try {
+    await enqueueSignupEmail(result.challengeId);
+  } catch {
+    emailQueued = false;
+    logger('ERROR', 'Verification email could not be re-queued', {
+      challengeId: result.challengeId,
+    });
+  }
+
+  return sendResponse(
+    c,
+    200,
+    emailQueued
+      ? 'A new verification email has been queued.'
+      : 'The verification email could not be queued. Please try again.',
+    {
+      challengeId: result.challengeId,
+      emailQueued,
+    },
+  );
 };
 
 export const signinUser = async (c: Context) => {
   const { email, password } = await c.req.json();
 
-  const user = await userService.findUser({ email, password });
+  if (
+    typeof email !== 'string' ||
+    typeof password !== 'string' ||
+    !email.trim() ||
+    !password
+  ) {
+    return sendResponse(c, 400, 'Email and password are required');
+  }
 
-  if (!user || !(user.accountType == accountType.Local)) {
-    return sendResponse(c, 400, 'User not signed up');
+  const user = await userService.findUserForSignin(email);
+
+  if (!user?.password || !(await user.comparePassword(password))) {
+    return sendResponse(c, 401, 'Invalid email or password');
   }
 
   if (user.emailVerified === false) {
@@ -108,7 +178,7 @@ export const signinUser = async (c: Context) => {
     );
 
     await sendOtpEmail(
-      email,
+      user.email,
       user.name,
       otp,
       'OTP Verification through Email on Storex',
@@ -120,25 +190,27 @@ export const signinUser = async (c: Context) => {
     });
   }
 
-  const accessToken = await jwtService.findandreissueToken(email);
+  const accessToken = await jwtService.findandreissueToken(user.email);
 
   if (!accessToken) {
-    logger('ERROR', 'Token reissue failed:', email);
+    logger('ERROR', 'Token reissue failed:', user.email);
     return sendResponse(c, 404, 'Access token not found');
   }
 
   await ensureStorageForUser(user._id);
   setAccessTokenCookie(c, accessToken);
 
+  const safeUser = user.toObject();
+  delete safeUser.password;
+
   return sendResponse(c, 200, 'User signed in successfully', {
-    user,
+    user: safeUser,
     accessToken,
   });
 };
 
 export const logoutUser = async (c: Context) => {
   sendCookie(c, 'accessToken', '', cookieConfig, {
-    sameSite: 'Lax',
     expires: new Date(0),
   });
 
@@ -266,6 +338,7 @@ export const resetPassword = async (c: Context) => {
 const jwtAuthController = {
   getUserStatus,
   signupUser,
+  resendSignupVerification,
   signinUser,
   logoutUser,
   verifyOTP,

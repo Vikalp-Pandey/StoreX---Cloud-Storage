@@ -15,6 +15,21 @@ interface FolderItemProps {
   onOpen?: () => void;
 }
 
+const formatFolderSize = (size: string) => {
+  const bytes = Number(size);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const unitIndex = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1,
+  );
+  return (
+    (bytes / 1024 ** unitIndex).toFixed(unitIndex === 0 ? 0 : 1) +
+    ' ' +
+    units[unitIndex]
+  );
+};
+
 export function FolderItem({
   folder,
   view,
@@ -155,7 +170,7 @@ export function FolderItem({
       </div>
 
       <p className="text-xs text-zinc-400">
-        {folder.size === '0' ? '0 B' : folder.size}
+        {formatFolderSize(folder.size)}
       </p>
       <div
         className={

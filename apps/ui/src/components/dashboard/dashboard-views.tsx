@@ -593,7 +593,7 @@ function RecentView() {
       />
       <section className={panelClass}>
         {recent.isLoading ? (
-          <p className="p-6 text-sm text-zinc-400">Loading recent items&</p>
+          <p className="p-6 text-sm text-zinc-400">Loading recent items</p>
         ) : recent.isError ? (
           <p className="p-6 text-sm text-zinc-400">
             Could not load recent items.

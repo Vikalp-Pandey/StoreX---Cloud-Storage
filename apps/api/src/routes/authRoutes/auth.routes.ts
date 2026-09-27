@@ -7,6 +7,10 @@ const auth = new Hono();
 
 auth.get('/me', validateUser, jwtAuthController.getUserStatus);
 auth.post('/signup', asyncHandler(jwtAuthController.signupUser));
+auth.post(
+  '/resend-verification',
+  asyncHandler(jwtAuthController.resendSignupVerification),
+);
 auth.post('/signin', jwtAuthController.signinUser);
 auth.post('/logout', validateUser, jwtAuthController.logoutUser);
 auth.post('/verify-OTP', jwtAuthController.verifyOTP);

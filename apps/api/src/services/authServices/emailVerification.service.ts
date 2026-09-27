@@ -1,8 +1,14 @@
 import mongoose from 'mongoose';
 import env from '@packages/env';
-import User from '@/models/authModels/user.model';
-import { VerificationType } from '@/models/authModels/verifyUser.model';
-import { validateOtpChallenge } from '@/services/authServices/otp.service';
+import User, { accountType } from '@/models/authModels/user.model';
+import {
+  VerificationType,
+  verifyUser,
+} from '@/models/authModels/verifyUser.model';
+import {
+  createOtpChallenge,
+  validateOtpChallenge,
+} from '@/services/authServices/otp.service';
 import jwtService from '@/services/authServices/auth.service';
 
 interface VerifySignupInput {
@@ -10,6 +16,38 @@ interface VerifySignupInput {
   email: string;
   otp: string;
 }
+
+export const recreateSignupEmailChallenge = async (emailInput: string) => {
+  const email = emailInput.trim().toLowerCase();
+
+  return mongoose.connection.transaction(async (session) => {
+    const user = await User.findOne({
+      email,
+      accountType: accountType.Local,
+      emailVerified: false,
+    }).session(session);
+
+    if (!user) return null;
+
+    await verifyUser.updateMany(
+      {
+        email,
+        verificationType: VerificationType.Signup,
+        consumedAt: { $exists: false },
+      },
+      { $set: { consumedAt: new Date() } },
+      { session },
+    );
+
+    const { challengeId } = await createOtpChallenge(
+      email,
+      VerificationType.Signup,
+      session,
+    );
+
+    return { challengeId, email };
+  });
+};
 
 export const verifySignupEmail = async (input: VerifySignupInput) => {
   return mongoose.connection.transaction(async (session) => {

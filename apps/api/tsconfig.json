@@ -7,7 +7,8 @@
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@packages/httputils": ["../../packages/httpUtils/handler.ts"]
     },
     "rootDir": "../../",
     "skipLibCheck": true

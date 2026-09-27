@@ -12,12 +12,17 @@ import {
 } from '@/components/auth/auth-shell';
 
 export default function VerifyOTPPage() {
-  const { verifyOtp, verifyEmail } = useAuth();
+  const { verifyOtp, verifyEmail, resendSignupVerification } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [timeLeft, setTimeLeft] = useState(300);
-  const email = location.state?.email || 'your email address';
-  const challengeId: string | undefined = location.state?.challengeId;
+  const signupEmail: string | undefined = location.state?.email;
+  const email = signupEmail || 'your email address';
+  const [timeLeft, setTimeLeft] = useState(
+    location.state?.emailQueued === false ? 0 : 300,
+  );
+  const [challengeId, setChallengeId] = useState<string | undefined>(
+    location.state?.challengeId,
+  );
   const isVerifying = verifyOtp.isPending || verifyEmail.isPending;
   const {
     register,
@@ -109,11 +114,29 @@ export default function VerifyOTPPage() {
         </p>
         <button
           type="button"
-          disabled={timeLeft > 0}
-          onClick={() => setTimeLeft(300)}
+          disabled={
+            timeLeft > 0 ||
+            !signupEmail ||
+            !challengeId ||
+            resendSignupVerification.isPending
+          }
+          onClick={() =>
+            resendSignupVerification.mutate(
+              { email: signupEmail! },
+              {
+                onSuccess: (data) => {
+                  if (!data?.data?.emailQueued) return;
+                  setChallengeId(data.data.challengeId);
+                  setTimeLeft(300);
+                },
+              },
+            )
+          }
           className="mt-3 text-xs font-medium text-zinc-300 transition hover:text-white disabled:cursor-not-allowed disabled:text-zinc-700"
         >
-          Request another code
+          {resendSignupVerification.isPending
+            ? 'Requesting another code...'
+            : 'Request another code'}
         </button>
       </div>
     </AuthShell>

@@ -47,6 +47,11 @@ export const authApi = {
     return res.data;
   },
 
+  resendSignupVerification: async (data: { email: string }) => {
+    const res = await api.post('/auth/resend-verification', data);
+    return res.data;
+  },
+
   getUserStatus: async () => {
     const res = await api.get('/auth/me');
     return res.data;

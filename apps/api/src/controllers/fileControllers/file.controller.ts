@@ -26,6 +26,7 @@ import {
   getCachedItems,
   invalidateItems,
 } from '@services/cacheservices';
+import { withCalculatedFolderSizes } from '@/services/fileServices/folder-size.service';
 
 export const MAX_NESTING_DEPTH = 20;
 const ITEMS_CACHE_TTL_SECONDS = 60;
@@ -51,12 +52,19 @@ const itemsCacheKey = (
 ) => `${locationCachePrefix(userId, parentFolder)}:${page}:${limit}`;
 
 async function invalidateItemCaches(userId: string, parentFolder?: unknown) {
-  await invalidateItems(
-    allItemsCacheKey(userId),
-    parentFolder
-      ? `storex:items:folder:${String(parentFolder)}:*`
-      : `${locationCachePrefix(userId)}:*`,
-  );
+  const patterns = new Set<string>([allItemsCacheKey(userId)]);
+  let currentFolderId = parentFolder ? String(parentFolder) : null;
+
+  while (currentFolderId) {
+    patterns.add(`storex:items:folder:${currentFolderId}:${userId}:*`);
+    const folder = await Folder.findById(currentFolderId)
+      .select('parent')
+      .lean();
+    currentFolderId = folder?.parent ? String(folder.parent) : null;
+  }
+
+  patterns.add(`${locationCachePrefix(userId)}:*`);
+  await invalidateItems(...patterns);
 }
 
 async function getFolderDepth(folderId: unknown) {
@@ -110,10 +118,11 @@ export const getAllItems = async (c: Context) => {
   if (cached)
     return sendResponse(c, 200, 'Items fetched successfully!', cached);
 
-  const items = await Promise.all([
+  const [files, folders] = await Promise.all([
     File.find({ user: userId }).lean(),
     Folder.find({ user: userId }).lean(),
   ]);
+  const items = [files, await withCalculatedFolderSizes(folders)];
   await cacheItems(cacheKey, items, ITEMS_CACHE_TTL_SECONDS);
   return sendResponse(c, 200, 'Items fetched successfully!', items);
 };
@@ -148,7 +157,7 @@ export const getItems = async (c: Context) => {
 
   const result = {
     files,
-    folders,
+    folders: await withCalculatedFolderSizes(folders),
     page,
   };
   await cacheItems(cacheKey, result, ITEMS_CACHE_TTL_SECONDS);
@@ -167,8 +176,9 @@ export const searchItems = async (c: Context) => {
     File.find({ name }).limit(50).lean(),
     Folder.find({ name }).limit(50).lean(),
   ]);
+  const sizedFolders = await withCalculatedFolderSizes(folders);
   const candidates = [
-    ...folders.map((item) => ({ itemType: 'folder' as const, item })),
+    ...sizedFolders.map((item) => ({ itemType: 'folder' as const, item })),
     ...files.map((item) => ({ itemType: 'file' as const, item })),
   ];
   const readable = await Promise.all(
@@ -668,10 +678,15 @@ export const getRecent = async (c: Context) => {
         });
         if (!allowed) return null;
 
-        const item =
-          activity.itemType === 'file'
-            ? await File.findById(id).lean()
-            : await Folder.findById(id).lean();
+        let item;
+        if (activity.itemType === 'file') {
+          item = await File.findById(id).lean();
+        } else {
+          const folder = await Folder.findById(id).lean();
+          item = folder
+            ? (await withCalculatedFolderSizes([folder]))[0]
+            : null;
+        }
         return item
           ? {
               _id: activity._id,

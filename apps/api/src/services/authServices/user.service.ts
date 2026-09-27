@@ -1,5 +1,5 @@
 import jwtService from '@/services/authServices/auth.service';
-import User, { userSchema } from '@/models/authModels/user.model';
+import User, { accountType, userSchema } from '@/models/authModels/user.model';
 
 export const createUser = async (user: userSchema) => {
   const isExisting = await User.findOne({ email: user.email });
@@ -16,10 +16,9 @@ export const createUser = async (user: userSchema) => {
 type FindUserCriteria = {
   id?: string;
   email?: string;
-  password?: string;
 };
 
-export const findUser = async ({ id, email, password }: FindUserCriteria) => {
+export const findUser = async ({ id, email }: FindUserCriteria) => {
   let user = null;
   let query: any = {};
   if (email) {
@@ -28,17 +27,21 @@ export const findUser = async ({ id, email, password }: FindUserCriteria) => {
   if (id) {
     query._id = id;
   }
-  if (password) {
-    query.password = password;
-  }
 
-  user = await User.findOne(query).select('+password');
+  user = await User.findOne(query);
   return user;
 };
+
+export const findUserForSignin = async (email: string) =>
+  User.findOne({
+    email: email.trim().toLowerCase(),
+    accountType: accountType.Local,
+  }).select('+password');
 
 const userService = {
   createUser,
   findUser,
+  findUserForSignin,
 };
 
 export default userService;

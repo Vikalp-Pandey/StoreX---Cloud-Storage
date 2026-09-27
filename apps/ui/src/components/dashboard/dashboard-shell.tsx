@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { toast } from 'react-toastify';
 import {
-  Bell,
   ChevronDown,
   FileText,
   Folder,
@@ -20,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useLogout } from '@/hooks/useAuth';
 import { filesApi, type StoredFile } from '@/api/files.api';
-import { useGetStorage } from '@/hooks/useFiles';
+import { useGetSharedWithMe, useGetStorage } from '@/hooks/useFiles';
 import {
   formatStorageBytes,
   formatStoragePercent,
@@ -91,12 +89,14 @@ function SidebarContent({
   pathname,
   displayName,
   email,
+  sharedCount,
   onNavigate,
   collapsed = false,
 }: {
   pathname: string;
   displayName: string;
   email?: string;
+  sharedCount: number;
   onNavigate?: () => void;
   collapsed?: boolean;
 }) {
@@ -163,8 +163,16 @@ function SidebarContent({
                     to={item.href}
                     onClick={onNavigate}
                     aria-current={active ? 'page' : undefined}
-                    title={collapsed ? item.label : undefined}
-                    className={`flex min-h-10 items-center rounded-lg text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
+                    title={
+                      collapsed
+                        ? `${item.label}${
+                            item.href === '/dashboard/shared' && sharedCount > 0
+                              ? ` (${sharedCount})`
+                              : ''
+                          }`
+                        : undefined
+                    }
+                    className={`relative flex min-h-10 items-center rounded-lg text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
                       collapsed ? 'justify-center px-2' : 'gap-3 px-3'
                     } ${
                       active
@@ -176,12 +184,35 @@ function SidebarContent({
                     {!collapsed && (
                       <span className="font-medium">{item.label}</span>
                     )}
-                    {active && !collapsed && (
+                    {!collapsed &&
+                    item.href === '/dashboard/shared' &&
+                    sharedCount > 0 ? (
+                      <span
+                        className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-zinc-200 px-1.5 text-[10px] font-semibold leading-5 text-zinc-900"
+                        aria-label={`${sharedCount} shared ${
+                          sharedCount === 1 ? 'item' : 'items'
+                        }`}
+                      >
+                        {sharedCount > 99 ? '99+' : sharedCount}
+                      </span>
+                    ) : active && !collapsed ? (
                       <span
                         className="ml-auto size-1.5 rounded-full bg-zinc-200"
                         aria-hidden="true"
                       />
-                    )}
+                    ) : null}
+                    {collapsed &&
+                      item.href === '/dashboard/shared' &&
+                      sharedCount > 0 && (
+                        <span
+                          className="absolute right-1 top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-zinc-200 px-1 text-[9px] font-semibold leading-4 text-zinc-900"
+                          aria-label={`${sharedCount} shared ${
+                            sharedCount === 1 ? 'item' : 'items'
+                          }`}
+                        >
+                          {sharedCount > 9 ? '9+' : sharedCount}
+                        </span>
+                      )}
                   </Link>
                 );
               })}
@@ -290,6 +321,60 @@ export function DashboardSidebar({
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }) {
+  const sharedQuery = useGetSharedWithMe();
+  const seenSharedItemsStorageKey = `storex:seen-shared-items:${
+    email ?? displayName
+  }`;
+  const [seenSharedItemKeys, setSeenSharedItemKeys] = useState<Set<string>>(
+    () => {
+      try {
+        const storedKeys = JSON.parse(
+          window.localStorage.getItem(seenSharedItemsStorageKey) ?? '[]',
+        );
+        return new Set<string>(Array.isArray(storedKeys) ? storedKeys : []);
+      } catch {
+        return new Set<string>();
+      }
+    },
+  );
+  const sharedItemKeys = (sharedQuery.data ?? []).map(
+    (entry) => `${entry.itemType}:${entry.item._id}`,
+  );
+  const sharedCount = sharedItemKeys.filter(
+    (itemKey) => !seenSharedItemKeys.has(itemKey),
+  ).length;
+
+  useEffect(() => {
+    try {
+      const storedKeys = JSON.parse(
+        window.localStorage.getItem(seenSharedItemsStorageKey) ?? '[]',
+      );
+      setSeenSharedItemKeys(
+        new Set<string>(Array.isArray(storedKeys) ? storedKeys : []),
+      );
+    } catch {
+      setSeenSharedItemKeys(new Set<string>());
+    }
+  }, [seenSharedItemsStorageKey]);
+
+  useEffect(() => {
+    if (
+      !isNavigationItemActive(pathname, '/dashboard/shared') ||
+      !sharedQuery.data
+    ) {
+      return;
+    }
+
+    const currentKeys = sharedQuery.data.map(
+      (entry) => `${entry.itemType}:${entry.item._id}`,
+    );
+    setSeenSharedItemKeys(new Set(currentKeys));
+    window.localStorage.setItem(
+      seenSharedItemsStorageKey,
+      JSON.stringify(currentKeys),
+    );
+  }, [pathname, seenSharedItemsStorageKey, sharedQuery.data]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -331,6 +416,7 @@ export function DashboardSidebar({
           pathname={pathname}
           displayName={displayName}
           email={email}
+          sharedCount={sharedCount}
           collapsed={collapsed}
         />
       </aside>
@@ -361,6 +447,7 @@ export function DashboardSidebar({
               pathname={pathname}
               displayName={displayName}
               email={email}
+              sharedCount={sharedCount}
               onNavigate={onClose}
               collapsed={false}
             />
@@ -493,15 +580,6 @@ export function DashboardTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
           </div>
         )}
       </form>
-
-      <button
-        type="button"
-        onClick={() => toast.info('You have no new notifications.')}
-        className="ml-auto rounded-lg p-2.5 text-zinc-300 transition hover:bg-zinc-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 md:ml-0"
-        aria-label="Notifications"
-      >
-        <Bell className="size-4" aria-hidden="true" />
-      </button>
     </header>
   );
 }

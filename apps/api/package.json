@@ -17,6 +17,7 @@
     "@hono/node-server": "^1.13.0",
     "@packages/clients": "workspace:*",
     "@packages/env": "workspace:*",
+    "@packages/httputils": "workspace:*",
     "@services/cacheservices": "workspace:*",
     "@services/emailservices": "workspace:*",
     "axios": "^1.13.6",
@@ -33,7 +34,6 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.152",
-    "@packages/httputils": "workspace:*",
     "@react-email/components": "^1.0.8",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.0",

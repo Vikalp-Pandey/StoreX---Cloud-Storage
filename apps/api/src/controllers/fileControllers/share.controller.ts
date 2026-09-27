@@ -26,8 +26,14 @@ const emailService = new EmailService(
 
 type FolderTreeNode = Record<string, unknown> & {
   _id: unknown;
+  size?: string;
   folders?: FolderTreeNode[];
-  files?: Record<string, unknown>[];
+  files?: Array<Record<string, unknown> & { size?: string }>;
+};
+
+const storedBytes = (size: unknown) => {
+  const bytes = Number(size);
+  return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : 0;
 };
 
 async function loadSharedFolderTree(
@@ -48,11 +54,18 @@ async function loadSharedFolderTree(
       loadSharedFolderTree(child as unknown as FolderTreeNode, depth + 1),
     ),
   );
+  const files = childFiles as unknown as Array<
+    Record<string, unknown> & { size?: string }
+  >;
+  const size =
+    files.reduce((total, file) => total + storedBytes(file.size), 0) +
+    folders.reduce((total, child) => total + storedBytes(child.size), 0);
 
   return {
     ...folder,
+    size: String(size),
     folders,
-    files: childFiles as unknown as Record<string, unknown>[],
+    files,
   };
 }
 

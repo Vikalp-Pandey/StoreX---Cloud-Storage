@@ -74,17 +74,17 @@ The client is delivered through the AWS static-site/CDN layer. API requests pass
 
 ## Technology Stack
 
-| Layer | Technologies |
-| --- | --- |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Radix UI |
-| API | Hono, Node.js, TypeScript, Zod |
-| Data | MongoDB, Mongoose, Redis |
-| Storage | Amazon S3, presigned URLs, multipart uploads |
-| Authorization | OpenFGA |
-| Billing | Stripe |
-| Messaging | Amazon SQS and dead-letter queue |
+| Layer          | Technologies                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| Frontend       | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Radix UI                            |
+| API            | Hono, Node.js, TypeScript, Zod                                                                |
+| Data           | MongoDB, Mongoose, Redis                                                                      |
+| Storage        | Amazon S3, presigned URLs, multipart uploads                                                  |
+| Authorization  | OpenFGA                                                                                       |
+| Billing        | Stripe                                                                                        |
+| Messaging      | Amazon SQS and dead-letter queue                                                              |
 | AWS deployment | SST, CloudFront/static hosting, API Gateway, Lambda, S3, SQS, scheduled functions, CloudWatch |
-| Tooling | pnpm workspaces, Turborepo, TypeScript |
+| Tooling        | pnpm workspaces, Turborepo, TypeScript                                                        |
 
 ## Repository Structure
 
@@ -112,14 +112,44 @@ pnpm install
 pnpm dev
 ```
 
-The API reads local configuration from `.env.local`. Configure MongoDB, Redis, AWS/S3, OpenFGA, OAuth, SMTP, and Stripe values before starting services that depend on them.
+The API reads application configuration from `.env.local`. Configure MongoDB, Redis, S3, OpenFGA, OAuth, SMTP, Stripe, and the IAM credentials used by the local AWS SDK there.
+
+Both `.env.local` and `.env.prod` contain credential placeholders:
+
+```dotenv
+AWS_REGION=eu-north-1
+AWS_ACCESS_KEY_ID=replace_with_your_iam_access_key_id
+AWS_SECRET_ACCESS_KEY=replace_with_your_iam_secret_access_key
+# AWS_SESSION_TOKEN=replace_with_your_session_token_if_using_temporary_credentials
+```
+
+Replace the first two placeholders with one matching, active IAM access-key pair. Uncomment and set `AWS_SESSION_TOKEN` only when using temporary credentials. These environment files are Git-ignored; never commit or share their real values.
+
+The StoreX scripts load the appropriate environment file automatically. To verify the `.env.local` credentials with the AWS CLI first, load its values into the current PowerShell process:
+
+```powershell
+Get-Content .env.local |
+  Where-Object { $_ -match '^[^#][^=]*=' } |
+  ForEach-Object {
+    $name, $value = $_ -split '=', 2
+    Set-Item -Path "Env:$name" -Value $value
+  }
+
+aws sts get-caller-identity
+pnpm dev
+```
 
 ## AWS Deployment
 
-Deploy the application with SST after configuring the required SST secrets and AWS profile:
+`.env.prod` supplies credentials when the API is started directly with its production start script. An SST deployment still authenticates the deployment command through the standard AWS credential-provider chain, while deployed Lambda functions use their SST-generated IAM execution roles.
 
-```bash
-pnpm sst:deploy
+To deploy SST with the same IAM key without putting the key on the command line, configure it as a local AWS profile:
+
+```powershell
+aws configure --profile storex-deploy
+aws sts get-caller-identity --profile storex-deploy
+$env:AWS_PROFILE = 'storex-deploy'
+pnpm sst:deploy --stage production
 ```
 
 SST provisions the static web application, API Gateway, Lambda functions, S3 upload bucket, signup-email queue and dead-letter queue, scheduled trash cleanup, and associated runtime configuration.

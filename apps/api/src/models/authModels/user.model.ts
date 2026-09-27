@@ -22,7 +22,7 @@ export interface userSchema {
 
 export interface userInput extends userSchema, Document {
   access_token?: string;
-  comparePassword(password: boolean): Promise<boolean>;
+  comparePassword(password: string): Promise<boolean>;
 }
 
 // Defining the db schema
