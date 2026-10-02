@@ -4,7 +4,7 @@ StoreX is a full-stack cloud storage platform for securely uploading, organizing
 
 ## AWS Deployment Architecture
 
-![StoreX AWS deployment architecture](./storex-aws-deployment-architecture.png)
+![StoreX AWS deployment architecture](./apps/ui/src/assets/storex-aws-deployment-architecture.png)
 
 The client is delivered through the AWS static-site/CDN layer. API requests pass through Amazon API Gateway to the Hono application running on AWS Lambda. The API uses Redis for cached reads, MongoDB as the source of truth, Amazon S3 for file objects, OpenFGA for authorization, Stripe for billing, and Amazon SQS for asynchronous signup-email delivery. Scheduled trash cleanup runs independently through an AWS cron-triggered Lambda function.
 
